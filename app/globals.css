@@ -1,0 +1,68 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap");
+@import "maplibre-gl/dist/maplibre-gl.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Color tokens as space-separated RGB channels so Tailwind's /opacity works. */
+:root,
+[data-theme="dark"] {
+  --ink: 6 10 20;
+  --panel: 11 18 32;
+  --edge: 28 41 64;
+  --muted: 125 138 163;
+  --fg: 230 236 245;
+  --accent: 52 187 230;
+  --grid: 22 36 58;
+}
+
+[data-theme="light"] {
+  --ink: 244 247 251;
+  --panel: 255 255 255;
+  --edge: 224 229 238;
+  --muted: 93 107 130;
+  --fg: 22 32 46;
+  --accent: 31 134 196;
+  --grid: 230 234 241;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: rgb(var(--ink));
+  color: rgb(var(--fg));
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.scroll-thin::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: rgb(var(--edge));
+  border-radius: 4px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fadeUp 0.25s ease-out;
+}
