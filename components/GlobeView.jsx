@@ -485,25 +485,32 @@ function GlobeView({
 
   function updateWindVisibility() {
     const map = mapRef.current;
-    if (!map || !map.getLayer("wind-arrows-layer")) return;
+    if (!map) return;
     const { showWindColor, showWindBarbs } = windFlagsRef.current;
-    // Independent toggles: speed = colour wash on water, direction = arrows.
-    map.setLayoutProperty(
-      "wind-speed",
-      "visibility",
-      showWindColor ? "visible" : "none"
-    );
-    map.setLayoutProperty(
-      "wind-arrows-layer",
-      "visibility",
-      showWindBarbs ? "visible" : "none"
-    );
-    // Tint the arrows by speed when the speed layer is also on, else neutral.
-    map.setPaintProperty(
-      "wind-arrows-layer",
-      "icon-color",
-      showWindColor ? SPEED_COLOR : ARROW_NEUTRAL
-    );
+    // Guard each layer independently: the wind grid loads after the map style,
+    // so on first paint the arrows layer can exist before the speed layer does
+    // (or vice-versa). Styling a layer that isn't there yet throws a maplibre
+    // error — these layers get styled again once the grid finishes loading.
+    if (map.getLayer("wind-speed")) {
+      map.setLayoutProperty(
+        "wind-speed",
+        "visibility",
+        showWindColor ? "visible" : "none"
+      );
+    }
+    if (map.getLayer("wind-arrows-layer")) {
+      map.setLayoutProperty(
+        "wind-arrows-layer",
+        "visibility",
+        showWindBarbs ? "visible" : "none"
+      );
+      // Tint the arrows by speed when the speed layer is also on, else neutral.
+      map.setPaintProperty(
+        "wind-arrows-layer",
+        "icon-color",
+        showWindColor ? SPEED_COLOR : ARROW_NEUTRAL
+      );
+    }
   }
 
   // Hide vessel markers on the far side of the globe (DOM markers aren't
