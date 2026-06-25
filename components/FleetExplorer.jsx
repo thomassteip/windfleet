@@ -368,6 +368,24 @@ export default function FleetExplorer() {
         </div>
       )}
 
+      {/* Footer — data attributions + feedback link. Slim and low-opacity so it
+          sits under the globe without competing with the UI. */}
+      <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 px-4 text-center">
+        <p className="text-[10px] leading-relaxed text-muted/60">
+          Map © OpenStreetMap contributors · CARTO · Routes © Eurostat SeaRoute ·
+          Land: Natural Earth
+          {" · "}
+          <a
+            href="https://www.linkedin.com/in/thomas-steip/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pointer-events-auto underline decoration-dotted underline-offset-2 transition hover:text-fg"
+          >
+            Feedback &amp; corrections welcome
+          </a>
+        </p>
+      </div>
+
       {/* Right-edge handle to open analytics */}
       {!analyticsOpen && (
         <button

@@ -236,9 +236,22 @@ function splitAntimeridian(coords) {
   const segs = [];
   let cur = [];
   for (const [lat, lng] of coords) {
-    if (cur.length && Math.abs(lng - cur[cur.length - 1][0]) > 180) {
-      segs.push(cur);
-      cur = [];
+    if (cur.length) {
+      const prevLng = cur[cur.length - 1][0];
+      const prevLat = cur[cur.length - 1][1];
+      if (Math.abs(lng - prevLng) > 180) {
+        // The segment crosses the antimeridian. Interpolate the latitude at the
+        // ±180 seam and add a point on each side, so the two halves meet at the
+        // seam instead of leaving a visible gap in the middle of the ocean.
+        const goingEast = lng < prevLng; // prev near +180, cur near -180
+        const curUnwrapped = lng + (goingEast ? 360 : -360);
+        const t =
+          ((goingEast ? 180 : -180) - prevLng) / (curUnwrapped - prevLng);
+        const seamLat = prevLat + t * (lat - prevLat);
+        cur.push([goingEast ? 180 : -180, seamLat]);
+        segs.push(cur);
+        cur = [[goingEast ? -180 : 180, seamLat]];
+      }
     }
     cur.push([lng, lat]);
   }
