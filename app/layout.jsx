@@ -8,6 +8,12 @@ export const metadata = {
     "An interactive map of every commercial vessel installed with wind-assisted propulsion systems (WAPS): rotor sails, wing sails, suction sails, kites and traditional sails.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#060a14",
+};
+
 // Set the theme before first paint to avoid a flash of the wrong theme.
 const noFlash = `(function(){try{var t=localStorage.getItem('wf-theme')||'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`;
 

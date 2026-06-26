@@ -30,7 +30,7 @@ export default function VesselCard({ vessel, onClose }) {
       : `${Number(v).toLocaleString()}${suffix}`;
 
   return (
-    <div className="fade-up scroll-thin pointer-events-auto max-h-[calc(100vh-7.5rem)] w-80 overflow-y-auto rounded-2xl border border-edge/60 bg-panel/90 p-5 backdrop-blur-md">
+    <div className="fade-up scroll-thin pointer-events-auto max-h-[70vh] w-full overflow-y-auto rounded-2xl border border-edge/60 bg-panel/90 p-5 backdrop-blur-md md:max-h-[calc(100vh-7.5rem)] md:w-80">
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">

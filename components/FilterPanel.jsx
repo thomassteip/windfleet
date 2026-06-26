@@ -52,7 +52,7 @@ export default function FilterPanel({
     filters.techs.size + filters.types.size + filters.installTypes.size;
 
   return (
-    <div className="scroll-thin pointer-events-auto flex min-h-0 w-72 flex-col gap-5 overflow-y-auto rounded-2xl border border-edge/60 bg-panel/80 p-5 backdrop-blur-md">
+    <div className="scroll-thin pointer-events-auto flex min-h-0 w-full flex-col gap-5 overflow-y-auto rounded-2xl border border-edge/60 bg-panel/80 p-5 backdrop-blur-md md:w-72">
       <div className="flex items-center justify-between">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted">
           Filters

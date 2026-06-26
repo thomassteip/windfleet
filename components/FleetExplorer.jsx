@@ -10,6 +10,7 @@ import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
 import { speedColor, SPEED_MAX } from "@/lib/wind";
+import { useIsMobile, useHasHover } from "@/lib/useMediaQuery";
 
 const WIND_GRADIENT = `linear-gradient(90deg, ${[0, 4, 8, 11, 15, 20]
   .map((s) => {
@@ -46,6 +47,11 @@ function WindToggle({ label, on, onClick }) {
 
 export default function FleetExplorer() {
   const { theme } = useTheme();
+  const isMobile = useIsMobile();
+  const hasHover = useHasHover();
+  // On phones the filter/wind column is a slide-up sheet rather than a
+  // permanently-floating panel.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState({
     techs: new Set(),
     types: new Set(),
@@ -123,6 +129,15 @@ export default function FleetExplorer() {
     window.addEventListener("mousemove", move);
     return () => window.removeEventListener("mousemove", move);
   }, [hovered]);
+
+  // On phones, opening a vessel card or the analytics panel should tuck the
+  // filter sheet away so it isn't stacked behind them.
+  useEffect(() => {
+    if (selected || analyticsOpen) setFiltersOpen(false);
+  }, [selected, analyticsOpen]);
+
+  const activeFilterCount =
+    filters.techs.size + filters.types.size + filters.installTypes.size;
 
   const filtered = useMemo(() => {
     return vessels.filter((v) => {
@@ -227,7 +242,7 @@ export default function FleetExplorer() {
           mode it shrinks to the left so the analytics panel sits beside it. */}
       <div
         className={`absolute inset-y-0 left-0 z-0 transition-[right] duration-500 ease-in-out ${
-          analyticsMode === "quarter" ? "right-1/4" : "right-0"
+          analyticsMode === "quarter" ? "right-0 md:right-1/4" : "right-0"
         }`}
       >
         <GlobeView
@@ -244,7 +259,7 @@ export default function FleetExplorer() {
       </div>
 
       {/* Header */}
-      <header className="pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-6">
+      <header className="pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4 sm:p-6">
         <div className="pointer-events-auto">
           <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">
             wind<span className="text-muted">fleet</span>
@@ -266,14 +281,46 @@ export default function FleetExplorer() {
         </div>
       </header>
 
-      {/* Left column: filters + wind layer, bounded so it stays in frame.
-          Hidden while the analytics panel is open. */}
+      {/* Backdrop behind the mobile filter sheet — tap to dismiss. */}
+      {isMobile && filtersOpen && (
+        <button
+          aria-label="Close filters"
+          onClick={() => setFiltersOpen(false)}
+          className="fixed inset-0 z-20 bg-ink/50 backdrop-blur-sm md:hidden"
+        />
+      )}
+
+      {/* Left column: filters + wind layer. A floating column on desktop; a
+          slide-up sheet on phones (toggled by the Filters button). Hidden while
+          the analytics panel is open. */}
       <div
-        className={`pointer-events-none absolute bottom-6 left-6 top-24 z-10 flex flex-col gap-3 transition-opacity duration-300 ${
-          analyticsOpen ? "pointer-events-none opacity-0" : "opacity-100"
+        className={`z-30 flex flex-col gap-3 transition-all duration-300 ${
+          isMobile
+            ? `scroll-thin fixed inset-x-3 bottom-3 max-h-[78vh] overflow-y-auto ${
+                filtersOpen && !analyticsOpen
+                  ? "pointer-events-auto translate-y-0 opacity-100"
+                  : "pointer-events-none translate-y-[115%] opacity-0"
+              }`
+            : `pointer-events-none absolute bottom-6 left-6 top-24 ${
+                analyticsOpen ? "opacity-0" : "opacity-100"
+              }`
         }`}
-        aria-hidden={analyticsOpen}
+        aria-hidden={isMobile ? !filtersOpen : analyticsOpen}
       >
+        {isMobile && (
+          <div className="pointer-events-auto flex items-center justify-between px-1.5 pt-0.5">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-muted">
+              Filters &amp; layers
+            </span>
+            <button
+              onClick={() => setFiltersOpen(false)}
+              className="text-muted hover:text-fg"
+              aria-label="Close filters"
+            >
+              ✕
+            </button>
+          </div>
+        )}
         <FilterPanel
           techs={TECHS}
           types={TYPES}
@@ -284,7 +331,7 @@ export default function FleetExplorer() {
         />
 
         {/* Wind layer (compact, under the filters) */}
-        <div className="pointer-events-auto shrink-0 w-72 rounded-2xl border border-edge/60 bg-panel/80 p-3 backdrop-blur-md">
+        <div className="pointer-events-auto shrink-0 w-full rounded-2xl border border-edge/60 bg-panel/80 p-3 backdrop-blur-md md:w-72">
           <div className="mb-2 flex items-center gap-1.5">
             <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted">
               Wind layer
@@ -321,15 +368,18 @@ export default function FleetExplorer() {
       {/* Vessel card — sits on the right normally, slides to the left when the
           analytics panel is open so both stay visible. */}
       <div
-        className={`absolute top-24 z-20 transition-all duration-500 ease-in-out ${
-          analyticsOpen ? "left-6" : "right-6"
+        className={`transition-all duration-500 ease-in-out ${
+          isMobile
+            ? "fixed inset-x-3 bottom-3 z-40"
+            : `absolute top-24 z-20 ${analyticsOpen ? "left-6" : "right-6"}`
         }`}
       >
         <VesselCard vessel={selected} onClose={() => setSelected(null)} />
       </div>
 
-      {/* Hover preview — follows the pointer */}
-      {hovered && !selected && (
+      {/* Hover preview — follows the pointer (pointer devices only; phones use
+          tap-to-open the full card instead) */}
+      {hasHover && hovered && !selected && (
         <div
           className="pointer-events-none fixed z-30 w-60 rounded-xl border border-edge/60 bg-panel/95 p-3 shadow-xl backdrop-blur-md"
           style={{
@@ -372,8 +422,7 @@ export default function FleetExplorer() {
           sits under the globe without competing with the UI. */}
       <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 px-4 text-center">
         <p className="text-[10px] leading-relaxed text-muted/60">
-          Map © OpenStreetMap contributors · CARTO · Routes © Eurostat SeaRoute ·
-          Land: Natural Earth
+          Routes © Eurostat SeaRoute · Land: Natural Earth
           {" · "}
           <a
             href="https://www.linkedin.com/in/thomas-steip/"
@@ -385,6 +434,25 @@ export default function FleetExplorer() {
           </a>
         </p>
       </div>
+
+      {/* Mobile-only Filters button — opens the slide-up sheet. */}
+      {isMobile && !filtersOpen && !analyticsOpen && !selected && (
+        <button
+          onClick={() => setFiltersOpen(true)}
+          aria-label="Open filters and layers"
+          className="pointer-events-auto fixed bottom-4 left-4 z-30 flex items-center gap-2 rounded-full border border-edge/60 bg-panel/90 px-4 py-2.5 text-xs font-medium text-fg shadow-xl backdrop-blur-md"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 5h18M6 12h12M10 19h4" />
+          </svg>
+          Filters
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-ink">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+      )}
 
       {/* Right-edge handle to open analytics */}
       {!analyticsOpen && (
@@ -407,7 +475,7 @@ export default function FleetExplorer() {
         className={`absolute inset-y-0 right-0 z-40 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
           analyticsMode === "full"
             ? "left-0 border-l-0"
-            : "left-auto w-1/4 min-w-[360px] border-l border-edge/60"
+            : "left-0 border-l-0 md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-edge/60"
         } ${analyticsOpen ? "translate-x-0" : "translate-x-full"}`}
         aria-hidden={!analyticsOpen}
       >
