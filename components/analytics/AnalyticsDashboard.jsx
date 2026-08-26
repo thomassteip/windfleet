@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ResponsiveContainer,
@@ -25,17 +25,8 @@ import {
   TECH_ORDER,
   techColor,
 } from "@/lib/theme";
-import {
-  KPIS,
-  CUMULATIVE,
-  INSTALLS_BY_TECH,
-  LAST_YEAR,
-  TECH_MIX,
-  TECH_INSTALL,
-  OEM_TREEMAP,
-  INSTALL_ORDER,
-  marketSize,
-} from "@/lib/analytics";
+import { buildAnalytics, FALLBACK_ANALYTICS, INSTALL_ORDER } from "@/lib/analytics";
+import { fetchVessels } from "@/lib/data";
 import { useTheme } from "@/components/ThemeProvider";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -167,6 +158,7 @@ export default function AnalyticsDashboard({
   onExpand,
   onCollapse,
   onHighlight,
+  vessels,
 }) {
   const { theme } = useTheme();
   const [dim, setDim] = useState("ship");
@@ -183,6 +175,36 @@ export default function AnalyticsDashboard({
   useEffect(() => {
     return () => onHighlight && onHighlight(null);
   }, [onHighlight]);
+
+  // Own fetch only when the parent didn't hand us a fleet (the standalone
+  // /analytics route). Falls back to the bundled snapshot until it resolves.
+  const [ownFleet, setOwnFleet] = useState(null);
+  useEffect(() => {
+    if (vessels) return undefined;
+    let active = true;
+    fetchVessels().then((live) => {
+      if (active && live) setOwnFleet(live);
+    });
+    return () => {
+      active = false;
+    };
+  }, [vessels]);
+
+  const fleet = vessels || ownFleet;
+  const A = useMemo(
+    () => (fleet ? buildAnalytics(fleet) : FALLBACK_ANALYTICS),
+    [fleet]
+  );
+  const {
+    KPIS,
+    CUMULATIVE,
+    INSTALLS_BY_TECH,
+    LAST_YEAR,
+    TECH_MIX,
+    TECH_INSTALL,
+    OEM_TREEMAP,
+    marketSize,
+  } = A;
 
   const cum = CUMULATIVE[dim];
   const market = marketSize(metric);

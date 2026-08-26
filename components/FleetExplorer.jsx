@@ -481,6 +481,7 @@ export default function FleetExplorer() {
       >
         {analyticsOpen && (
           <AnalyticsDashboard
+            vessels={vessels}
             compact={analyticsMode === "quarter"}
             onClose={closeAnalytics}
             onExpand={() => setAnalyticsMode("full")}
