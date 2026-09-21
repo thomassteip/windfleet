@@ -7,7 +7,7 @@
  * snapshot back in sync, then rebuild the routes:
  *
  *     node scripts/export_vessels.cjs   # Supabase -> data/vessels.json
- *     node scripts/build_routes.cjs     # -> public/routes.json
+ *     python3 scripts/build_routes.py   # -> public/routes.json
  *
  * Reads the NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY from .env.local (read-only).
  */
