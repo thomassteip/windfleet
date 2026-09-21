@@ -106,6 +106,18 @@ function makeArrowImage() {
   return { width: s, height: s, data: x.getImageData(0, 0, s, s).data };
 }
 
+// How windy a cell is. The ERA5 "Average" grid carries its own `speed` array,
+// because the length of the mean u/v vector is a DIFFERENT, much smaller
+// quantity than the mean wind speed: where direction varies the components
+// cancel, so the mid South Atlantic averages out to 0.22 m/s despite being
+// windy nearly always. Live GFS is a single instant, so there hypot(u,v) is
+// simply the speed. u/v still give the direction in both cases.
+function cellSpeed(grid, idx) {
+  return grid.speed
+    ? grid.speed[idx]
+    : Math.hypot(grid.u[idx], grid.v[idx]);
+}
+
 // pointOnLand() walks every land ring, and the zoom-adaptive arrow field
 // re-tests the SAME grid cells on every rebuild — so remember each cell's
 // verdict. Lazily filled (-1 = not yet tested) rather than precomputed, so a
@@ -144,7 +156,7 @@ function windPoints(grid, strideDeg, withBearing) {
       const idx = i * nlon + j;
       const uu = u[idx];
       const vv = v[idx];
-      const spd = Math.hypot(uu, vv);
+      const spd = cellSpeed(grid, idx);
       if (spd < 0.5) continue;
       let lng = lon0 + dlon * j;
       if (lng > 180) lng -= 360;
@@ -208,7 +220,7 @@ function buildWindSpeedDataURL(grid) {
   for (let i = 0; i < nlat; i++) {
     const row = northFirst ? i : nlat - 1 - i;
     for (let j = 0; j < nlon; j++) {
-      const spd = Math.hypot(u[i * nlon + j], v[i * nlon + j]);
+      const spd = cellSpeed(grid, i * nlon + j);
       const [r, g, b] = speedColor(spd);
       const p = (row * nlon + j) * 4;
       img.data[p] = r;

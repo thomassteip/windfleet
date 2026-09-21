@@ -177,6 +177,18 @@ dot. They still count in every total — that's intended, not a bug.
   until Sep 2026, painting the Southern Ocean's winds over the Arctic whenever you picked
   "Live". Derive direction from the sign of `dlat`; never assume. It hid for a while
   because the toggle defaults to "Average", the one that happened to match.
+- **Mean wind SPEED is not the length of the mean u/v vector**, and conflating them
+  understates every variable-wind region. Where direction varies the components cancel:
+  the mid South Atlantic averages to a 0.22 m/s *vector* despite being windy almost
+  always (live GFS read 6.87 m/s at the same spot). Averaging the monthly vectors only
+  reaches 1.91 m/s, because monthly means have already smoothed out the daily variation.
+  So `wind-avg.json` carries a separate `speed` array from ERA5's own `si10`
+  (`10m_wind_speed`), which averages the HOURLY speeds — `u`/`v` are kept purely for the
+  prevailing-direction arrows. `cellSpeed()` in `GlobeView` reads `speed` when a grid has
+  it and falls back to `hypot(u, v)` otherwise, which is correct for Live: a single GFS
+  instant has no distinction to make. Don't "simplify" that fallback away, and don't drop
+  `10m_wind_speed` from the CDS request — before this split, the 0.5 m/s arrow cutoff was
+  silently blanking 803 ocean cells that aren't remotely calm.
 - `app/globals.css` line 1 `@import`s Google Fonts. In a sandboxed shell with no network
   this makes `next build` hang forever at ~0% CPU with no error. Build on a machine with
   real network access.
