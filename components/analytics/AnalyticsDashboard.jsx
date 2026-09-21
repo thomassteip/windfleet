@@ -123,6 +123,9 @@ function Toggle({ options, value, onChange }) {
 }
 
 function LegendChips({ items, colorFn, hl, onPick }) {
+  // Dim only when the highlight is one of THIS legend's items, so a technology
+  // picked elsewhere doesn't fade a ship-type legend whose bands stay lit.
+  const mine = hl != null && items.includes(hl);
   return (
     <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1.5">
       {items.map((c) => (
@@ -130,7 +133,7 @@ function LegendChips({ items, colorFn, hl, onPick }) {
           key={c}
           onClick={() => onPick(c)}
           className="flex items-center gap-1.5 text-[11px] transition"
-          style={{ opacity: !hl || hl === c ? 1 : 0.4 }}
+          style={{ opacity: !mine || hl === c ? 1 : 0.4 }}
         >
           <span className="h-2.5 w-2.5 rounded-sm" style={{ background: colorFn(c) }} />
           <span className={hl === c ? "text-fg" : "text-muted"}>{c}</span>
@@ -164,12 +167,16 @@ export default function AnalyticsDashboard({
   const [dim, setDim] = useState("ship");
   const [metric, setMetric] = useState("devices");
   const [hl, setHl] = useState(null);
+  // Which dimension `hl` belongs to ("tech" | "ship" | "inst"). The value alone
+  // isn't enough for the globe: "Bulk Carrier" has to be matched against a
+  // vessel's ship-type bucket, "Retrofit" against its installType.
+  const [hlDim, setHlDim] = useState("tech");
 
   // Surface the current highlight to the parent so the globe can show the
-  // related dots (only technology highlights map to vessels).
+  // related dots.
   useEffect(() => {
-    onHighlight && onHighlight(hl);
-  }, [hl, onHighlight]);
+    onHighlight && onHighlight(hl ? { dim: hlDim, value: hl } : null);
+  }, [hl, hlDim, onHighlight]);
 
   // Clear the cross-filter when this panel unmounts.
   useEffect(() => {
@@ -217,7 +224,12 @@ export default function AnalyticsDashboard({
   };
   const GRID = theme === "dark" ? "#16243a" : "#e6eaf1";
 
-  const toggleHl = (name) => setHl((h) => (h === name ? null : name));
+  const toggleHl = (name, forDim = "tech") => {
+    setHlDim(forDim);
+    setHl((h) => (h === name ? null : name));
+  };
+  // The hero chart's bands are whichever dimension the toggle is on.
+  const pickCum = (name) => toggleHl(name, dim);
   // Opacity for a series/category: fade only within charts that contain hl.
   const op = (name, cats) => (!hl || !cats.includes(hl) ? 1 : name === hl ? 1 : FADE);
 
@@ -271,14 +283,6 @@ export default function AnalyticsDashboard({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {hl && (
-              <button
-                onClick={() => setHl(null)}
-                className="rounded-md border border-edge/70 px-2.5 py-1 font-mono text-[11px] text-muted transition hover:text-fg"
-              >
-                clear: {hl} ✕
-              </button>
-            )}
             {/* Expand to full screen / collapse back to quarter width */}
             {compact && onExpand && (
               <button
@@ -308,9 +312,20 @@ export default function AnalyticsDashboard({
           </div>
         </div>
 
-        {compact && (
+        {hl && (
+          <button
+            onClick={() => setHl(null)}
+            title={`Clear ${hl} highlight`}
+            className="mb-4 flex max-w-full items-center gap-1.5 rounded-md border border-edge/70 px-2.5 py-1 font-mono text-[11px] text-muted transition hover:text-fg"
+          >
+            <span className="truncate">clear: {hl}</span>
+            <span className="shrink-0">✕</span>
+          </button>
+        )}
+
+        {compact && !hl && (
           <p className="mb-4 text-[11px] leading-relaxed text-muted">
-            Click any technology in a chart to spotlight its vessels on the globe.
+            Click any segment in a chart to spotlight its vessels on the globe.
           </p>
         )}
 
@@ -345,14 +360,14 @@ export default function AnalyticsDashboard({
           }
           className="mb-6"
         >
-          <LegendChips items={cum.keys} colorFn={(k) => colorFor(dim, k)} hl={hl} onPick={toggleHl} />
+          <LegendChips items={cum.keys} colorFn={(k) => colorFor(dim, k)} hl={hl} onPick={pickCum} />
           <RibbonChart
             data={cum.data}
             cats={cum.keys}
             colorFn={(k) => colorFor(dim, k)}
             theme={theme}
             highlight={hl}
-            onPick={toggleHl}
+            onPick={pickCum}
             partialYear={LAST_YEAR}
           />
           <p className="mt-2 text-[11px] text-muted">

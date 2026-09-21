@@ -9,6 +9,7 @@ import ThemeToggle from "./ThemeToggle";
 import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
+import { shipBucket } from "@/lib/analytics";
 import { speedColor, SPEED_MAX } from "@/lib/wind";
 import { useIsMobile, useHasHover } from "@/lib/useMediaQuery";
 
@@ -174,13 +175,24 @@ export default function FleetExplorer() {
     });
   }, [vessels, filters]);
 
-  // When a technology is highlighted in the analytics charts, narrow the globe
-  // to just those vessels so the related dots stand out.
+  // When a chart segment is highlighted in the analytics panel, narrow the
+  // globe to just those vessels so the related dots stand out. The highlight
+  // arrives as { dim, value }: the value alone is ambiguous, and each dimension
+  // matches a different vessel field — ship types go through the SAME bucketing
+  // the charts use, so clicking "Other" or "Ro-Ro / Ropax" works too.
   const globeVessels = useMemo(() => {
-    if (analyticsHl && TECHS.includes(analyticsHl)) {
-      return filtered.filter((v) => v.technology === analyticsHl);
-    }
-    return filtered;
+    if (!analyticsHl) return filtered;
+    const { dim, value } = analyticsHl;
+    const matches =
+      dim === "ship"
+        ? (v) => shipBucket(v.type) === value
+        : dim === "inst"
+        ? (v) => v.installType === value
+        : (v) => v.technology === value;
+    const hit = filtered.filter(matches);
+    // A highlight that matches nothing (e.g. filters already exclude it) would
+    // blank the globe — leave the current view alone instead.
+    return hit.length ? hit : filtered;
   }, [filtered, analyticsHl]);
 
   // Fleet sea-routes are precomputed offline (scripts/build_routes.py →

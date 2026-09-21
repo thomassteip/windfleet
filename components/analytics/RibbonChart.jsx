@@ -54,7 +54,10 @@ export default function RibbonChart({
     return segs;
   });
 
-  const opOf = (cat) => (!highlight ? 1 : cat === highlight ? 1 : 0.12);
+  // Fade only when the highlight is one of THIS chart's categories — a
+  // technology picked elsewhere must not grey out a ship-type chart entirely.
+  const inChart = highlight != null && cats.includes(highlight);
+  const opOf = (cat) => (!inChart ? 1 : cat === highlight ? 1 : 0.12);
   const isPartial = (i) => partialYear && data[i].year === partialYear;
   const fgStroke = theme === "dark" ? "#e6ecf5" : "#16202e";
 
