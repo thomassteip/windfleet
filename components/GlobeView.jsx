@@ -89,7 +89,7 @@ function makeArrowImage() {
   const x = c.getContext("2d");
   x.clearRect(0, 0, s, s);
   x.strokeStyle = "#ffffff";
-  x.lineWidth = 4;
+  x.lineWidth = 3;
   x.lineCap = "round";
   x.lineJoin = "round";
   // stem
@@ -106,6 +106,21 @@ function makeArrowImage() {
   return { width: s, height: s, data: x.getImageData(0, 0, s, s).data };
 }
 
+// pointOnLand() walks every land ring, and the zoom-adaptive arrow field
+// re-tests the SAME grid cells on every rebuild — so remember each cell's
+// verdict. Lazily filled (-1 = not yet tested) rather than precomputed, so a
+// coarse sample never pays for cells it doesn't visit. Keyed on the grid
+// object, so switching Live/Average drops the stale mask automatically.
+const LAND_MASK_CACHE = new WeakMap();
+function landMaskFor(grid) {
+  let mask = LAND_MASK_CACHE.get(grid);
+  if (!mask) {
+    mask = new Int8Array(grid.nlat * grid.nlon).fill(-1);
+    LAND_MASK_CACHE.set(grid, mask);
+  }
+  return mask;
+}
+
 // Sample the wind grid into ocean-only points. `strideDeg` controls spacing;
 // `withBearing` adds the direction (only the sparse arrow layer needs it). The
 // dense set (every cell) feeds a blurred speed wash; the sparse set feeds the
@@ -114,19 +129,27 @@ function windPoints(grid, strideDeg, withBearing) {
   if (!grid) return { type: "FeatureCollection", features: [] };
   const { nlat, nlon, lat0, lon0, dlat, dlon, u, v } = grid;
   const stepI = Math.max(1, Math.round(strideDeg / Math.abs(dlat)));
-  const stepJ = Math.max(1, Math.round(strideDeg / Math.abs(dlon)));
+  const land = landMaskFor(grid);
   const feats = [];
   for (let i = 0; i < nlat; i += stepI) {
     const lat = lat0 + dlat * i;
     if (Math.abs(lat) > 80) continue;
+    // Longitude stride widens toward the poles so arrows stay evenly spaced
+    // in real (great-circle) distance, not in degrees: a degree of longitude
+    // shrinks to ~cos(lat) of its equatorial length as latitude rises, which
+    // is what packed arrows on top of each other near the poles before.
+    const cosLat = Math.cos((lat * Math.PI) / 180);
+    const stepJ = Math.max(1, Math.round(strideDeg / (Math.abs(dlon) * cosLat)));
     for (let j = 0; j < nlon; j += stepJ) {
-      const uu = u[i * nlon + j];
-      const vv = v[i * nlon + j];
+      const idx = i * nlon + j;
+      const uu = u[idx];
+      const vv = v[idx];
       const spd = Math.hypot(uu, vv);
       if (spd < 0.5) continue;
       let lng = lon0 + dlon * j;
       if (lng > 180) lng -= 360;
-      if (pointOnLand(lng, lat)) continue; // ocean only
+      if (land[idx] === -1) land[idx] = pointOnLand(lng, lat) ? 1 : 0;
+      if (land[idx]) continue; // ocean only
       const props = { speed: Math.round(spd * 10) / 10 };
       if (withBearing) {
         props.bearing = Math.round(
@@ -143,7 +166,19 @@ function windPoints(grid, strideDeg, withBearing) {
   return { type: "FeatureCollection", features: feats };
 }
 
-const windArrowsFC = (grid) => windPoints(grid, 4.5, true); // arrow field
+const windArrowsFC = (grid, strideDeg = 4.5) => windPoints(grid, strideDeg, true);
+
+// Arrow spacing tightens as you zoom in, so the field reads as "more detail"
+// rather than the same handful of arrows just growing bigger. Floored at 1.5°
+// (public/wind.json's native grid resolution, see fetch_gfs_wind.py) — spacing
+// arrows closer than the data's real resolution would just repeat the nearest
+// cell's value, which reads as duplicated arrows rather than genuine detail.
+function strideForZoom(zoom) {
+  if (zoom < 2.5) return 4.5; // matches the whole-globe default view exactly
+  if (zoom < 4) return 3;
+  if (zoom < 5.5) return 2;
+  return 1.5;
+}
 
 // Web-Mercator latitude limit + helper (image sources live in mercator space).
 const WIND_MERC = 85.051129;
@@ -163,11 +198,19 @@ function buildWindSpeedDataURL(grid) {
   small.height = nlat;
   const sctx = small.getContext("2d");
   const img = sctx.createImageData(nlon, nlat);
+  // Canvas row 0 has to be the NORTHERNMOST latitude — both the mercator remap
+  // below and the image-source coordinates assume north is at the top. The two
+  // wind sources disagree on row order: ERA5 (wind-avg.json) starts at +90 and
+  // steps south (dlat < 0), GFS (wind.json) starts at -90 and steps north
+  // (dlat > 0). Derive the direction from dlat instead of trusting either
+  // convention, or the whole field renders upside down for one of them.
+  const northFirst = dlat < 0;
   for (let i = 0; i < nlat; i++) {
+    const row = northFirst ? i : nlat - 1 - i;
     for (let j = 0; j < nlon; j++) {
       const spd = Math.hypot(u[i * nlon + j], v[i * nlon + j]);
       const [r, g, b] = speedColor(spd);
-      const p = (i * nlon + j) * 4;
+      const p = (row * nlon + j) * 4;
       img.data[p] = r;
       img.data[p + 1] = g;
       img.data[p + 2] = b;
@@ -294,6 +337,7 @@ function GlobeView({
   theme = "dark",
   showWindColor = false,
   showWindBarbs = false,
+  windVariant = "average",
   onWindMeta,
 }) {
   const wrapRef = useRef(null);
@@ -302,6 +346,7 @@ function GlobeView({
   const markersRef = useRef([]);
   const windGridRef = useRef(null);
   const windSpeedUrlRef = useRef(null);
+  const windStrideRef = useRef(4.5); // current arrow spacing (degrees), zoom-adaptive
   const spinRef = useRef({ raf: 0, enabled: true });
   const dashRef = useRef({ timer: 0, i: 0 });
 
@@ -321,6 +366,13 @@ function GlobeView({
   windFlagsRef.current = { showWindColor, showWindBarbs };
 
   // Shrink the basemap's place/country labels (CARTO ships them fairly large).
+  //
+  // text-size comes back in three different shapes and they don't scale the
+  // same way: a plain number, a modern expression array, or CARTO's legacy
+  // stop function ({ base, stops: [[zoom, size], ...] }). Feeding that last
+  // one to ["*", …] is what MapLibre rejects as "Bare objects invalid" — so
+  // scale its stop values directly, which also preserves the basemap's
+  // zoom ramp instead of flattening every label to a single size.
   function shrinkLabels(map) {
     const layers = (map.getStyle() && map.getStyle().layers) || [];
     for (const l of layers) {
@@ -329,8 +381,15 @@ function GlobeView({
         const ts = map.getLayoutProperty(l.id, "text-size");
         if (typeof ts === "number") {
           map.setLayoutProperty(l.id, "text-size", ts * 0.7);
-        } else if (ts) {
+        } else if (Array.isArray(ts)) {
           map.setLayoutProperty(l.id, "text-size", ["*", ts, 0.7]);
+        } else if (ts && Array.isArray(ts.stops)) {
+          map.setLayoutProperty(l.id, "text-size", {
+            ...ts,
+            stops: ts.stops.map(([zoom, size]) =>
+              typeof size === "number" ? [zoom, size * 0.7] : [zoom, size]
+            ),
+          });
         } else {
           map.setLayoutProperty(l.id, "text-size", 9);
         }
@@ -421,9 +480,10 @@ function GlobeView({
       });
     }
     if (!map.getSource("wind-arrows")) {
+      windStrideRef.current = strideForZoom(map.getZoom());
       map.addSource("wind-arrows", {
         type: "geojson",
-        data: windArrowsFC(windGridRef.current),
+        data: windArrowsFC(windGridRef.current, windStrideRef.current),
       });
     }
     const firstSymbol = (map.getStyle().layers || []).find(
@@ -443,7 +503,7 @@ function GlobeView({
           type: "raster",
           source: "wind-speed-img",
           layout: { visibility: "none" },
-          paint: { "raster-opacity": 0.5, "raster-fade-duration": 0 },
+          paint: { "raster-opacity": 0.28, "raster-fade-duration": 0 },
         },
         speedBefore
       );
@@ -462,11 +522,17 @@ function GlobeView({
             "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
             "icon-ignore-placement": true,
-            // Small at world view, growing modestly with zoom (SDF keeps them
-            // crisp at any size).
-            "icon-size": ["interpolate", ["linear"], ["zoom"], 1, 0.28, 4, 0.5, 7, 0.9],
+            // Grows alongside strideForZoom()'s tightening spacing, so denser
+            // fields also read as "more detail" rather than a wall of icons
+            // the same size as the sparse world view (SDF keeps them crisp).
+            // Kept deliberately small — vessels and routes are the point of
+            // this map, wind is context, not the headline.
+            "icon-size": [
+              "interpolate", ["linear"], ["zoom"],
+              1, 0.16, 2, 0.2, 3.5, 0.28, 5, 0.4, 7, 0.55, 10, 0.7,
+            ],
           },
-          paint: { "icon-color": ARROW_NEUTRAL, "icon-opacity": 1 },
+          paint: { "icon-color": ARROW_NEUTRAL, "icon-opacity": 0.7 },
         },
         before
       );
@@ -492,8 +558,29 @@ function GlobeView({
       });
     }
     const a = map.getSource("wind-arrows");
-    if (a) a.setData(windArrowsFC(windGridRef.current));
+    if (a) a.setData(windArrowsFC(windGridRef.current, windStrideRef.current));
     updateWindVisibility();
+  }
+
+  // Re-samples the arrow field at a coarser/finer spacing as the camera zooms,
+  // so arrows stay evenly spaced-looking rather than either a sparse wall of
+  // icons up close or an illegible smear zoomed out.
+  //
+  // Not cheap: a rebuild at the tightest spacing is ~14k points on the live
+  // grid, and it runs on the main thread. So skip it entirely while the arrows
+  // are hidden — both wind toggles start off, which is the path most visitors
+  // take. `windStrideRef` is only advanced when the data is actually rebuilt,
+  // so it keeps describing what's really in the source; switching the arrows
+  // on re-runs this (see the toggle effect) and picks up the current zoom.
+  function updateWindArrowDensity() {
+    const map = mapRef.current;
+    if (!map || !windGridRef.current) return;
+    if (!windFlagsRef.current.showWindBarbs) return;
+    const stride = strideForZoom(map.getZoom());
+    if (stride === windStrideRef.current) return;
+    windStrideRef.current = stride;
+    const a = map.getSource("wind-arrows");
+    if (a) a.setData(windArrowsFC(windGridRef.current, stride));
   }
 
   function updateWindVisibility() {
@@ -664,6 +751,9 @@ function GlobeView({
     // Keep far-side markers hidden as the globe turns.
     map.on("render", updateMarkerOcclusion);
 
+    // Wind arrows re-sample to a tighter/looser grid as the camera zooms.
+    map.on("zoom", updateWindArrowDensity);
+
     // Gentle auto-rotate while idle and nothing is selected.
     const spin = () => {
       const m = mapRef.current;
@@ -707,9 +797,11 @@ function GlobeView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Load wind grid once; report metadata; feed the vector wind layers.
+  // Load the wind grid (live GFS or ERA5 average, per windVariant); report
+  // metadata; feed the vector wind layers. Re-runs whenever the variant
+  // toggle changes, rebuilding both the colour wash and the arrow field.
   useEffect(() => {
-    loadWind()
+    loadWind(windVariant)
       .then((g) => {
         windGridRef.current = g;
         onWindMeta &&
@@ -721,7 +813,7 @@ function GlobeView({
         windGridRef.current = null;
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onWindMeta]);
+  }, [onWindMeta, windVariant]);
 
   // Theme change → swap basemap style (style.load re-adds routes + wind).
   useEffect(() => {
@@ -747,9 +839,11 @@ function GlobeView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paths]);
 
-  // Wind toggles → just flip layer visibility / colouring.
+  // Wind toggles → flip layer visibility / colouring, then catch the arrow
+  // field up to the current zoom (density updates are skipped while hidden).
   useEffect(() => {
     updateWindVisibility();
+    updateWindArrowDensity();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showWindColor, showWindBarbs]);
 

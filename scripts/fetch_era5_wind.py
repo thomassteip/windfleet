@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
 Download ERA5 mean 10 m wind (1989-2019) from the Copernicus Climate Data Store
-and write public/wind.json in the schema the WindFleet app expects.
+and write public/wind-avg.json in the schema the WindFleet app expects — the
+"Average" option in the Wind layer's Live/Average toggle (see lib/wind.js and
+GlobeView.jsx). public/wind.json is a separate, live file refreshed every 6
+hours by scripts/fetch_gfs_wind.py; this script never touches it.
 
 ONE-TIME SETUP
 --------------
@@ -15,8 +18,8 @@ RUN
     python scripts/fetch_era5_wind.py
 
 It downloads monthly-mean u/v for 1995-2025, averages them to a single
-climatology, coarsens to 2.5 deg, and overwrites public/wind.json.
-Then just reload the app — the wind layer becomes real ERA5 data.
+climatology, coarsens to 2.5 deg, and overwrites public/wind-avg.json.
+Then just reload the app and switch the Wind layer to "Average".
 """
 
 import json
@@ -84,7 +87,7 @@ def build():
         "u": [round(float(x), 2) for x in u.ravel()],
         "v": [round(float(x), 2) for x in v.ravel()],
     }
-    path = os.path.join(os.path.dirname(__file__), "..", "public", "wind.json")
+    path = os.path.join(os.path.dirname(__file__), "..", "public", "wind-avg.json")
     with open(path, "w") as f:
         json.dump(out, f)
     print(f"Wrote {path} — {out['nlat']}x{out['nlon']} grid, real ERA5 data.")

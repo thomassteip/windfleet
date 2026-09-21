@@ -1,0 +1,45 @@
+name: Refresh live wind data
+
+on:
+  schedule:
+    # ~4h45m after the 00Z and 12Z GFS cycles, giving NOAA's NOMADS service
+    # time to finish publishing that cycle's analysis.
+    #
+    # Twice daily rather than every cycle on purpose: each run commits a fresh
+    # ~116KB (gzipped) wind.json and every commit triggers a Vercel redeploy,
+    # so the cost compounds in git history forever. Global wind at 1.5°
+    # resolution doesn't visibly change in 6 hours at this display scale.
+    - cron: "45 4,16 * * *"
+  workflow_dispatch: {} # lets you run it manually from the Actions tab
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # The default workflow token is read-only on repos created since 2023, and
+    # this job pushes the refreshed data — without this it fails with a 403.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install cfgrib xarray numpy
+
+      - name: Fetch latest GFS wind and rebuild public/wind.json
+        run: python scripts/fetch_gfs_wind.py
+
+      - name: Commit if data changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- public/wind.json; then
+            echo "No change in wind data, skipping commit."
+          else
+            git add public/wind.json
+            git commit -m "Refresh live wind data"
+            git push
+          fi

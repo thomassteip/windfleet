@@ -45,6 +45,30 @@ function WindToggle({ label, on, onClick }) {
   );
 }
 
+// Two-way segmented control: live GFS analysis vs. the ERA5 climatology.
+function WindVariantSwitch({ value, onChange }) {
+  return (
+    <div className="mb-2 flex gap-1 rounded-lg border border-edge/60 bg-ink/20 p-0.5 text-[11px]">
+      {[
+        ["live", "Live"],
+        ["average", "Average"],
+      ].map(([val, label]) => (
+        <button
+          key={val}
+          onClick={() => onChange(val)}
+          className={`flex-1 rounded-md px-2 py-1 transition ${
+            value === val
+              ? "bg-accent/20 text-fg"
+              : "text-muted hover:text-fg"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function FleetExplorer() {
   const { theme } = useTheme();
   const isMobile = useIsMobile();
@@ -66,6 +90,7 @@ export default function FleetExplorer() {
   const [analyticsHl, setAnalyticsHl] = useState(null);
   const [windColor, setWindColor] = useState(false);
   const [windBarbs, setWindBarbs] = useState(false);
+  const [windVariant, setWindVariant] = useState("average"); // "live" | "average"
   const [windMeta, setWindMeta] = useState(null);
 
   const analyticsOpen = analyticsMode !== "closed";
@@ -101,9 +126,9 @@ export default function FleetExplorer() {
   );
 
   const windInfo = windMeta
-    ? (windMeta.source || "").toLowerCase().includes("era5")
+    ? windVariant === "average"
       ? `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (2.5°). Colour = mean wind speed (m/s); arrows = prevailing direction.`
-      : "Modelled placeholder wind — run scripts/fetch_era5_wind.py for the real ERA5 field. Colour = speed, arrows = direction."
+      : `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (1.5°), refreshed twice daily. Colour = wind speed (m/s); arrows = direction.`
     : "Loading wind data…";
 
   // Hover handler: store the vessel and the cursor position so the preview
@@ -160,8 +185,8 @@ export default function FleetExplorer() {
 
   // Fleet sea-routes are precomputed offline (scripts/build_routes.py →
   // public/routes.json) with the searoute engine, so the whole-fleet overlay
-  // AND each vessel's click route load instantly from one static file — no live
-  // /api/searoute calls, nothing to restart. Each entry is
+  // AND each vessel's click route load instantly from one static file — no
+  // live route API, nothing to restart. Each entry is
   //   { id, travelled: [[lat,lng],...]|null, planned: [[lat,lng],...]|null }
   // travelled = last port → current position, planned = current → destination.
   const [allRoutes, setAllRoutes] = useState([]);
@@ -254,6 +279,7 @@ export default function FleetExplorer() {
           theme={theme}
           showWindColor={windColor}
           showWindBarbs={windBarbs}
+          windVariant={windVariant}
           onWindMeta={setWindMeta}
         />
       </div>
@@ -348,6 +374,7 @@ export default function FleetExplorer() {
               </div>
             </div>
           </div>
+          <WindVariantSwitch value={windVariant} onChange={setWindVariant} />
           <div className="flex flex-col gap-1.5">
             <WindToggle label="Wind speed" on={windColor} onClick={() => setWindColor((v) => !v)} />
             <WindToggle label="Wind direction" on={windBarbs} onClick={() => setWindBarbs((v) => !v)} />
