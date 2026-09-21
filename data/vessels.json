@@ -3247,7 +3247,7 @@
     "flag": "Marshall Islands",
     "type": "Bulk Carrier",
     "builtYear": 2018,
-    "dwt": null,
+    "dwt": 64000,
     "gt": null,
     "loa": 199,
     "beam": 32,
@@ -3259,12 +3259,12 @@
     "systemSize": null,
     "systemSizeUnit": null,
     "installType": "Newbuild",
-    "buildYard": null,
-    "installYard": null,
+    "buildYard": "Jiangsu Haitong Offshore Engineering (Rugao)",
+    "installYard": "Jiangsu Haitong Offshore Engineering (Rugao)",
     "shipowner": "Blue Planet Shipping",
     "operator": "Blue Planet Shipping",
     "status": "Active",
-    "notes": null,
+    "notes": "World's first wind-assisted ultramax bulker. 4 Anemoi rotor sails on deck RAILS, movable aside for port operations. Passed a second dry-dock survey in 2026 confirming long-term reliability. Rotor height not published.",
     "lat": 7.96312,
     "lng": 76.82301,
     "speed": 10.1,
@@ -3618,13 +3618,13 @@
     "units": 1,
     "systemSize": 24,
     "systemSizeUnit": "m",
-    "installType": "Retrofit",
+    "installType": "Newbuild",
     "buildYard": null,
     "installYard": null,
-    "shipowner": null,
-    "operator": null,
+    "shipowner": "Hung Ze Shipping",
+    "operator": "Hung Ze Shipping",
     "status": "Active",
-    "notes": "Added from IWSA vessel list (Jun 2026)",
+    "notes": "One of Hung Ze Shipping's 14,000 dwt chemical tanker series; delivered with the Dealfeng rotor sail already fitted, hence Newbuild (was wrongly Retrofit). One 5 x 24 m rotor on the forecastle deck, ~8% fuel saving on trading routes; NAPA route optimisation. First of series delivered Q4 2025. MMSI / flag / beam still to fill; built year 2026 vs Q4-2025 first delivery suggests this is a later hull in the series.",
     "lat": null,
     "lng": null,
     "speed": null,
@@ -3641,46 +3641,6 @@
   },
   {
     "id": 92,
-    "name": "Ilha de Tinhare",
-    "imo": null,
-    "mmsi": null,
-    "flag": null,
-    "type": "Offshore Supply",
-    "builtYear": null,
-    "dwt": 1106,
-    "gt": 550,
-    "loa": 64,
-    "beam": null,
-    "technology": "Suction Sail",
-    "oem": null,
-    "oemCountry": null,
-    "installedYear": 2025,
-    "units": 2,
-    "systemSize": 10,
-    "systemSizeUnit": "m",
-    "installType": "Retrofit",
-    "buildYard": null,
-    "installYard": null,
-    "shipowner": null,
-    "operator": null,
-    "status": "Active",
-    "notes": "Added from IWSA vessel list (Jun 2026)",
-    "lat": null,
-    "lng": null,
-    "speed": null,
-    "course": null,
-    "navStatus": null,
-    "destination": null,
-    "destinationLocode": null,
-    "lastPort": null,
-    "lastPortLocode": null,
-    "positionUpdated": null,
-    "mstUrl": "https://www.myshiptracking.com/vessels/ilha-de-tinhare-mmsi-None-imo-None",
-    "photoUrl": null,
-    "vfUrl": "https://www.vesselfinder.com/vessels/details/7911741"
-  },
-  {
-    "id": 93,
     "name": "Stena Connecta",
     "imo": "1033133",
     "mmsi": "212362000",
@@ -3720,17 +3680,17 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1033133"
   },
   {
-    "id": 94,
+    "id": 93,
     "name": "Northern Phoenix",
     "imo": "1034668",
     "mmsi": "258202000",
     "flag": "Norway",
     "type": "Gas Carrier",
-    "builtYear": null,
+    "builtYear": 2025,
     "dwt": 10182,
     "gt": 10627,
     "loa": 130,
-    "beam": null,
+    "beam": 22,
     "technology": "Rotor Sail",
     "oem": "Norsepower",
     "oemCountry": "Finland",
@@ -3760,7 +3720,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1034668"
   },
   {
-    "id": 95,
+    "id": 94,
     "name": "Northern Purpose",
     "imo": "1045265",
     "mmsi": "255805567",
@@ -3774,17 +3734,17 @@
     "technology": "Rotor Sail",
     "oem": "Norsepower",
     "oemCountry": "Finland",
-    "installedYear": 2025,
+    "installedYear": 2026,
     "units": 1,
     "systemSize": 28,
     "systemSizeUnit": "m",
     "installType": "Newbuild",
-    "buildYard": null,
-    "installYard": null,
-    "shipowner": null,
-    "operator": null,
+    "buildYard": "Dalian Shipbuilding Offshore (DSOC)",
+    "installYard": "Dalian Shipbuilding Offshore (DSOC)",
+    "shipowner": "Bernhard Schulte",
+    "operator": "Northern Lights (charter)",
     "status": "Active",
-    "notes": "Added from IWSA vessel list (Jun 2026); OEM inferred from sister ship",
+    "notes": "4th LCO2 carrier for the Northern Lights CCS project, completing phase 1 of the fleet. Delivered 2026 by DSOC Dalian; 7,500 m3 capacity; rotor sail + LNG dual-fuel + air lubrication. Installed Year corrected 2025 -> 2026: a newbuild delivered in 2026 cannot have been fitted in 2025. Flag still to fill.",
     "lat": 2.16362,
     "lng": 102.03321,
     "speed": 14,
@@ -3800,7 +3760,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1045265"
   },
   {
-    "id": 96,
+    "id": 95,
     "name": "Pacific Sunstone",
     "imo": "9998250",
     "mmsi": "636023958",
@@ -3840,7 +3800,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9998250"
   },
   {
-    "id": 97,
+    "id": 96,
     "name": "Amadeus Titanium",
     "imo": "9350460",
     "mmsi": "246776000",
@@ -3880,7 +3840,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9350460"
   },
   {
-    "id": 98,
+    "id": 97,
     "name": "Bow Erikson",
     "imo": "1039864",
     "mmsi": "352006481",
@@ -3920,7 +3880,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1039864"
   },
   {
-    "id": 99,
+    "id": 98,
     "name": "Tern Dal",
     "imo": "9992153",
     "mmsi": "219034372",
@@ -3960,7 +3920,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9992153"
   },
   {
-    "id": 100,
+    "id": 99,
     "name": "Trans Hav",
     "imo": "9348948",
     "mmsi": "249497000",
@@ -4000,7 +3960,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9348948"
   },
   {
-    "id": 101,
+    "id": 100,
     "name": "Trans Sol",
     "imo": "9348936",
     "mmsi": "249587000",
@@ -4040,11 +4000,11 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9348936"
   },
   {
-    "id": 102,
+    "id": 101,
     "name": "Baltazar",
     "imo": "1032218",
-    "mmsi": "216000000",
-    "flag": null,
+    "mmsi": "257748630",
+    "flag": "Norway",
     "type": "Bulk Carrier",
     "builtYear": 2026,
     "dwt": 83300,
@@ -4059,12 +4019,12 @@
     "systemSize": 24,
     "systemSizeUnit": "m",
     "installType": "Newbuild",
-    "buildYard": null,
-    "installYard": null,
+    "buildYard": "New Yangzi Shipyard",
+    "installYard": "New Yangzi Shipyard",
     "shipowner": "Klaveness Combination Carriers",
     "operator": "Klaveness Combination Carriers",
     "status": "Active",
-    "notes": "Flag state blank and MMSI 216000000 looks like a placeholder - VERIFY.",
+    "notes": "Final vessel of the CABU III series and the FIRST WAPS-equipped ship in Klaveness Combination Carriers' 19-ship fleet. Delivered 9 Aug 2026 from New Yangzi Shipyard, China, with 2 bound4blue eSAIL suction sails. MMSI 257748630 replaces the placeholder 216000000; MID 257 = Norway, consistent with KCC's Norwegian registry.",
     "lat": 23.57405,
     "lng": 117.36724,
     "speed": 0,
@@ -4080,7 +4040,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1032218"
   },
   {
-    "id": 103,
+    "id": 102,
     "name": "Baltic Timber",
     "imo": "1029091",
     "mmsi": "255916098",
@@ -4120,7 +4080,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1029091"
   },
   {
-    "id": 104,
+    "id": 103,
     "name": "Atlantis",
     "imo": "1094917",
     "mmsi": "228478800",
@@ -4160,7 +4120,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1094917"
   },
   {
-    "id": 105,
+    "id": 104,
     "name": "Kurotakisan Maru III",
     "imo": "9908205",
     "mmsi": "352980851",
@@ -4200,7 +4160,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/9908205"
   },
   {
-    "id": 106,
+    "id": 105,
     "name": "Hansa Drejoe",
     "imo": "1031599",
     "mmsi": "255916022",
@@ -4240,7 +4200,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1031599"
   },
   {
-    "id": 107,
+    "id": 106,
     "name": "Hansa Christiansoe",
     "imo": "1031587",
     "mmsi": "255916021",
@@ -4280,7 +4240,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1031587"
   },
   {
-    "id": 108,
+    "id": 107,
     "name": "Maria Sibum",
     "imo": "1079620",
     "mmsi": "255916101",
@@ -4320,7 +4280,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1079620"
   },
   {
-    "id": 109,
+    "id": 108,
     "name": "Baltic Iron",
     "imo": "1029106",
     "mmsi": "255916099",
@@ -4360,7 +4320,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1029106"
   },
   {
-    "id": 110,
+    "id": 109,
     "name": "Gerd Sibum",
     "imo": "1079606",
     "mmsi": "255916100",
@@ -4400,7 +4360,7 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1079606"
   },
   {
-    "id": 111,
+    "id": 110,
     "name": "Captain Arctic",
     "imo": "1108134",
     "mmsi": "228483900",
@@ -4440,10 +4400,10 @@
     "vfUrl": "https://www.vesselfinder.com/vessels/details/1108134"
   },
   {
-    "id": 112,
+    "id": 111,
     "name": "Rossini",
     "imo": "1057957",
-    "mmsi": null,
+    "mmsi": "210770000",
     "flag": "Cyprus",
     "type": "Tanker",
     "builtYear": 2026,
@@ -4464,7 +4424,7 @@
     "shipowner": "GEFO Shipping Group",
     "operator": "GEFO Shipping Group",
     "status": "Active",
-    "notes": "LEAD VESSEL of six GEFO chemical-tanker newbuilds from Nantong Xiangyu (deliveries 2026-2028), designed by SDC Ship Design & Consult GmbH. First 20x4 m EX-compliant Norsepower Rotor Sail lifted and secured at the yard May 2026, opening the series installation phase. Registry dwt 3,838 (the '3,850 dwt' class in Norsepower's release). Connected to Norsepower Digital Dimension. MMSI still to fill.",
+    "notes": "LEAD VESSEL of six GEFO chemical-tanker newbuilds from Nantong Xiangyu (deliveries 2026-2028), designed by SDC Ship Design & Consult GmbH. First 20x4 m EX-compliant Norsepower Rotor Sail lifted and secured at the yard May 2026, opening the series installation phase. Registry dwt 3,838 (the '3,850 dwt' class in Norsepower's release). Connected to Norsepower Digital Dimension.",
     "lat": null,
     "lng": null,
     "speed": null,
