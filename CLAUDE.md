@@ -44,7 +44,7 @@ python3 scripts/build_snapshot.py       # xlsx -> windfleet-app/data/vessels.jso
 python3 scripts/build_supabase_sql.py   # xlsx -> windfleet-app/supabase/init.sql
 # then paste init.sql into the Supabase SQL editor and Run (it drops + recreates)
 cd windfleet-app
-node scripts/build_routes.cjs           # -> public/routes.json
+python3 scripts/build_routes.py         # -> public/routes.json (pip install searoute)
 ```
 
 `init.sql` is a generated artifact — never hand-edit it, regenerate it.
@@ -56,9 +56,26 @@ would have silently shifted every field by one. Keep it that way. A new column n
 four edits: the workbook, `SHEET_FIELDS`/`FIELDS` in the two build scripts, the `create
 table` block and `COLS` in `build_supabase_sql.py`, and `rowToVessel` in `lib/data.js`.
 
+**Deleting a row from the workbook renumbers every vessel after it.** `id` comes from
+row position, so removing one ship shifts all the ids below it up by one — and
+`public/routes.json` is keyed by `id`. If you delete a row and don't rebuild the routes,
+each shifted vessel silently draws *another ship's* voyage line, in that ship's
+technology colour. It happened in Sep 2026: dropping "Ilha de Tinhare" (id 92) moved 20
+vessels, and four of them ended up with tracks terminating thousands of km from the
+actual ship. So after any row deletion, always:
+
+```bash
+python3 scripts/build_routes.py       # -> public/routes.json, keyed to the NEW ids
+```
+
+To check: the last point of a vessel's `travelled` leg should sit on its current
+lat/lng — that's how the corruption was caught, and it's cheap to re-verify.
+
 Pushing to `main` deploys the front end to Vercel but does **nothing** to the database.
 Supabase is updated only by running the SQL by hand. Forgetting this step is the single
-easiest way to ship a build that looks stale.
+easiest way to ship a build that looks stale — and after an id shift it's worse than
+stale, because a fresh `init.sql` against an old `routes.json` is what actually triggers
+the wrong-route bug above.
 
 ## THE RULE: one source of truth for the fleet
 
@@ -82,12 +99,11 @@ The fix, and the invariant to preserve:
 ## Stack
 
 Next.js 14 (App Router, JS not TS) · Tailwind · Supabase (read-only anon key, RLS select
-policy) · react-globe.gl + three · Recharts · deployed on Vercel.
+policy) · MapLibre GL (globe projection) · Recharts · deployed on Vercel.
 
-Versions are pinned deliberately: `next` 14.2.35 and `three` 0.180.0. react-globe.gl
-breaks on newer three — don't bump casually.
+`next` is pinned at 14.2.35 deliberately — bump with care.
 
-- `app/` — `/` globe explorer, `/analytics` dashboard, `/api/searoute`
+- `app/` — `/` globe explorer, `/analytics` dashboard
 - `components/` — `FleetExplorer` (state owner), `GlobeView`, `FilterPanel`, `VesselCard`
 - `components/analytics/` — `AnalyticsDashboard`, `RibbonChart`
 - `lib/` — `data.js` (Supabase + fallback), `analytics.js`, `theme.js`, `wind.js`, `ports.js`
@@ -139,14 +155,44 @@ dot. They still count in every total — that's intended, not a bug.
 
 ## Gotchas
 
-- The globe freezes on higher-resolution land polygons. There's a custom simplified
-  polygon file for this reason — don't raise the resolution.
+- The globe's rendered land/coastlines come from the CARTO vector-tile basemaps, not
+  from GeoJSON polygons — that's what keeps them crisp at any zoom with no freeze.
+  `world-atlas/land-110m.json` in `GlobeView` is a separate, invisible thing: a coarse
+  land/ocean mask used only to keep wind arrows and the wind-speed wash off land.
+- The Wind layer has two data sources, picked with the Live/Average switch
+  (`FleetExplorer`'s `windVariant` state, passed to `GlobeView` and `lib/wind.js`'s
+  `loadWind(variant)`): "Live" reads `public/wind.json`, refreshed from NOAA's GFS 10m
+  wind analysis (free, no API key, straight from NOMADS) twice daily by
+  `scripts/fetch_gfs_wind.py` via `.github/workflows/refresh-wind.yml`. "Average" reads
+  `public/wind-avg.json`, a static 1995-2025 ERA5 climatology from
+  `scripts/fetch_era5_wind.py` (run by hand, needs a free CDS API key — see the script's
+  docstring; it changes rarely enough that it isn't automated). Same JSON schema, both
+  files — don't let that fool you into thinking they're kept in sync automatically, they
+  aren't and shouldn't be. Both the direction arrows and the speed wash read whichever
+  file is currently selected.
+- **The two wind files store their rows in opposite order**, and it is not cosmetic:
+  `wind-avg.json` starts at +90 and steps south (`dlat` negative), `wind.json` starts at
+  -90 and steps north (`dlat` positive). Anything that treats row 0 as a fixed hemisphere
+  renders one of them upside down — which is exactly what `buildWindSpeedDataURL()` did
+  until Sep 2026, painting the Southern Ocean's winds over the Arctic whenever you picked
+  "Live". Derive direction from the sign of `dlat`; never assume. It hid for a while
+  because the toggle defaults to "Average", the one that happened to match.
 - `app/globals.css` line 1 `@import`s Google Fonts. In a sandboxed shell with no network
   this makes `next build` hang forever at ~0% CPU with no error. Build on a machine with
   real network access.
-- Position data is scraped from MyShipTracking by `scripts/refresh_positions.py` (daily
-  GitHub Action, patches Supabase by row `id` using the service key). A cloud IP hitting
-  them daily may eventually get blocked — if so, only `scrape_mst()` needs replacing.
+- Position data is scraped by `scripts/refresh_positions.py` (daily GitHub Action,
+  patches Supabase by row `id` using the service key), from TWO sources: MyShipTracking
+  for position/speed/course/nav-status/photo, VesselFinder for destination, last port
+  and their UN/LOCODEs. The VesselFinder pass is best-effort — if it fails, the position
+  fields still get written. A cloud IP hitting either daily may eventually get blocked;
+  if so only `scrape_mst()` / `scrape_vf_voyage()` need replacing.
+- `python3 scripts/refresh_positions.py --probe <IMO>` prints what the VesselFinder
+  parser sees for one vessel without touching Supabase. Use it first if the LOCODE
+  columns stop filling — it means VesselFinder restructured their markup.
+- LOCODEs matter because port NAMES are ambiguous: "NEWCASTLE" is both Australia and
+  the Tyne, and `lib/ports.js` has a single entry pointing at Australia. `resolvePort()`
+  tries the LOCODE first, so filling those columns is what makes voyage lines correct
+  rather than usually-correct.
 - `.env.local` holds the Supabase URL + **anon** key (read-only, gitignored). The
   service key lives only in GitHub Actions secrets. Never commit either.
 

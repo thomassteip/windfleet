@@ -1,6 +1,7 @@
 /node_modules
 /.next
 /out
+.claude/
 .DS_Store
 *.log
 .vercel
@@ -9,3 +10,7 @@
 # Python
 __pycache__/
 *.pyc
+
+# Raw ERA5 source data (18MB+) — only scripts/fetch_era5_wind.py reads this,
+# to regenerate the much smaller public/wind-avg.json the app actually loads.
+era5_wind_monthly.nc
