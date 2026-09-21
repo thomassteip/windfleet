@@ -27,12 +27,25 @@ from datetime import datetime, timezone
 import requests
 from bs4 import BeautifulSoup
 
-# Position, course, last port, destination and ship photo all come from
-# MyShipTracking (scraped below). This script needs one extra column on the
-# Supabase `vessels` table for the photo:
+# TWO SOURCES, by design:
+#   MyShipTracking  -> position, speed, course, nav status, photo   (authoritative)
+#   VesselFinder    -> destination, last port, and their UN/LOCODEs (authoritative)
+# MyShipTracking's free-text destination is unreliable and carries no LOCODE.
+# VesselFinder publishes a LOCODE per port call, which is a far better key for
+# geocoding than a port NAME — "NEWCASTLE" is both Australia and the Tyne, and
+# name matching silently picks one. lib/ports.js resolvePort() tries the LOCODE
+# first and falls back to the name, so filling these columns makes the globe's
+# voyage lines correct rather than usually-correct.
+#
+# The VesselFinder pass is BEST EFFORT: if it fails for a vessel, the
+# MyShipTracking fields are still written exactly as before. It never blocks a
+# position update.
+#
+# Required columns on the Supabase `vessels` table:
 #   alter table vessels add column photo_url text;
-# (The destination_locode / last_port_locode columns from init.sql are optional
-#  and simply stay null — route geocoding falls back to the port name.)
+#   alter table vessels add column destination_locode text;
+#   alter table vessels add column last_port_locode text;
+# (All three are already in supabase/init.sql.)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
@@ -137,6 +150,62 @@ def scrape_mst(url):
     return out if "lat" in out else None
 
 
+# UN/LOCODE is 5 chars (2 country + 3 place). VesselFinder appends a 3-digit
+# terminal/berth suffix, e.g. NLRTM001 — lib/locodes.js is keyed on that form.
+LOCODE_RE = re.compile(r"\b([A-Z]{2}[A-Z2-9]{3}\d{3})\b")
+
+
+def vf_url_for(imo):
+    return f"https://www.vesselfinder.com/vessels/details/{imo}"
+
+
+def scrape_vf_voyage(imo):
+    """Destination / last port + their LOCODEs from VesselFinder.
+
+    Returns a dict with any of destination, destination_locode, last_port,
+    last_port_locode — or {} on any failure. Never raises: this is an
+    enhancement, not a requirement.
+
+    NOTE: the selectors below target VesselFinder's vessel-detail markup. If
+    they ever restructure the page this quietly returns {} and the columns stop
+    filling — run with --probe IMO to see what is actually being parsed.
+    """
+    try:
+        r = requests.get(vf_url_for(imo), headers=SCRAPE_HEADERS, timeout=15)
+        if r.status_code != 200:
+            return {}
+    except Exception:
+        return {}
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    out = {}
+
+    # Port calls on VesselFinder link to /ports/<LOCODE>-<slug>; the anchor text
+    # is the clean port name and the href carries the code. The voyage block
+    # lists departure first, arrival second.
+    seen = []
+    for a in soup.select("a[href*='/ports/']"):
+        href = a.get("href", "")
+        name = a.get_text(strip=True)
+        m = LOCODE_RE.search(href.upper())
+        if not name or len(name) > 40:
+            continue
+        entry = (name, m.group(1) if m else None)
+        if entry not in seen:
+            seen.append(entry)
+
+    if seen:
+        out["last_port"], lp_code = seen[0]
+        if lp_code:
+            out["last_port_locode"] = lp_code
+    if len(seen) >= 2 and seen[-1][0].upper() != seen[0][0].upper():
+        out["destination"], d_code = seen[-1]
+        if d_code:
+            out["destination_locode"] = d_code
+
+    return out
+
+
 def patch_vessel(vessel_id, fields):
     """Update one vessel's position fields in Supabase."""
     r = requests.patch(
@@ -169,11 +238,21 @@ def main():
             )
             pos["updated_at"] = pos["position_updated"]
             pos["mst_url"] = url
-            pos["vf_url"] = f"https://www.vesselfinder.com/vessels/details/{imo}"
+            pos["vf_url"] = vf_url_for(imo)
+
+            # VesselFinder pass — authoritative for voyage, so it OVERWRITES the
+            # MyShipTracking destination/last_port when it has them.
+            time.sleep(DELAY_S)
+            voyage = scrape_vf_voyage(imo)
+            pos.update({k: v for k, v in voyage.items() if v})
+
             try:
                 patch_vessel(v["id"], pos)
+                loc = pos.get("last_port_locode") or "-"
+                dst = pos.get("destination_locode") or "-"
                 print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  OK  "
-                      f"lat={pos['lat']:.2f} lng={pos['lng']:.2f}")
+                      f"lat={pos['lat']:.2f} lng={pos['lng']:.2f}  "
+                      f"from={loc} to={dst}")
                 found += 1
             except Exception as e:
                 print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  upsert failed: {e}")
@@ -187,5 +266,23 @@ def main():
     print(f"\nDone: {found} updated, {missed} without a fresh position.")
 
 
+def probe(imo):
+    """Print exactly what the VesselFinder parser sees for one IMO.
+
+    Use this to check the selectors without touching Supabase:
+        python3 scripts/refresh_positions.py --probe 9708617
+    """
+    print(f"GET {vf_url_for(imo)}")
+    got = scrape_vf_voyage(imo)
+    if not got:
+        print("  nothing parsed — page fetch failed, or the selectors need updating")
+        return
+    for k in ("last_port", "last_port_locode", "destination", "destination_locode"):
+        print(f"  {k:20s} {got.get(k) or '-'}")
+
+
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) > 2 and sys.argv[1] == "--probe":
+        probe(sys.argv[2])
+    else:
+        main()
