@@ -131,7 +131,7 @@ export default function VesselCard({ vessel, onClose }) {
               className="mt-1.5 text-[10px] text-muted/60"
               title={vessel.positionUpdated}
             >
-              Last AIS fix{" "}
+              Last seen{" "}
               <span className="font-mono tabular-nums">
                 {ago(vessel.positionUpdated)}
               </span>

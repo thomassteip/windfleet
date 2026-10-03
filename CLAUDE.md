@@ -217,7 +217,7 @@ dot. They still count in every total — that's intended, not a bug.
   week while the map froze. The script now **exits 1 if under half the fleet comes
   back**. Don't weaken that check: a red ✗ is the only alarm there is.
 - `position_updated` is AIS's own `seen` time (when the message was heard), not when the
-  job ran, and the card shows it as "Last AIS fix N days ago". Coverage is dense near
+  job ran, and the card shows it as "Last seen N days ago". Coverage is dense near
   Europe/N. America, thin mid-ocean, so ~20 ships routinely read a week or more old.
   That's honest, not a bug. When a fix arrives, every field in it is written, empty
   ones too, so a fresh position is never paired with a stale status or destination.

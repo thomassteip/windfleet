@@ -237,17 +237,20 @@ def main():
             fields["last_port"], fields["last_port_locode"] = lp
 
         fields["updated_at"] = iso(now)
+        # Only the write is guarded: an error in the log line below must never
+        # count as a failed write (it once did, turning a good run red).
         try:
             if not DRY_RUN:
                 patch_vessel(v["id"], fields)
-            written += 1
-            print(f"[{i:3d}/{len(tracked)}] {name:32s}  OK  seen {age_h:6.1f} h ago  "
-                  f"{fields.get('nav_status', '-')[:14]:14s}  "
-                  f"from={fields.get('last_port_locode') or '-':5s} "
-                  f"to={fields.get('destination_locode') or fields.get('destination') or '-'}")
         except Exception as e:
             failed += 1
             print(f"[{i:3d}/{len(tracked)}] {name:32s}  write failed: {e}")
+            continue
+        written += 1
+        print(f"[{i:3d}/{len(tracked)}] {name:32s}  OK  seen {age_h:6.1f} h ago  "
+              f"{(fields.get('nav_status') or '-')[:14]:14s}  "
+              f"from={fields.get('last_port_locode') or '-':5s} "
+              f"to={fields.get('destination_locode') or fields.get('destination') or '-'}")
 
     print(f"\nDone: {found}/{len(tracked)} heard by Open Waters, {written} written"
           f"{' (dry run — nothing saved)' if DRY_RUN else ''}, {failed} write errors; "
