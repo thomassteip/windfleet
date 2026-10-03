@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ResponsiveContainer,
   BarChart,
@@ -161,9 +162,18 @@ export default function AnalyticsDashboard({
   onExpand,
   onCollapse,
   onHighlight,
+  onOpenMaker,
   vessels,
 }) {
   const { theme } = useTheme();
+  const router = useRouter();
+  // A treemap tile opens that maker ("Other" opens the list of all makers):
+  // in place when we're the explorer's side panel, by navigation when we're
+  // the standalone /analytics page.
+  const openMaker = (slug) => {
+    if (onOpenMaker) onOpenMaker(slug || "index");
+    else router.push(slug ? `/makers/${slug}` : "/makers");
+  };
   const [dim, setDim] = useState("ship");
   const [metric, setMetric] = useState("devices");
   const [hl, setHl] = useState(null);
@@ -234,13 +244,13 @@ export default function AnalyticsDashboard({
   const op = (name, cats) => (!hl || !cats.includes(hl) ? 1 : name === hl ? 1 : FADE);
 
   const renderTile = (props) => {
-    const { x, y, width, height, name, tech, size } = props;
+    const { x, y, width, height, name, slug, tech, size } = props;
     if (width <= 0 || height <= 0) return null;
     const fill = tech === "Other" ? POP.grey : techColor(tech);
     const o = !hl || !TECH_ORDER.includes(hl) ? 1 : tech === hl ? 1 : FADE;
     const showLabel = width > 54 && height > 26;
     return (
-      <g style={{ cursor: "pointer" }} onClick={() => toggleHl(tech)}>
+      <g style={{ cursor: "pointer" }} onClick={() => openMaker(slug)}>
         <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={o}
           stroke={theme === "dark" ? "#0a111b" : "#ffffff"} strokeWidth={2} rx={3} />
         {showLabel && (
@@ -489,7 +499,7 @@ export default function AnalyticsDashboard({
         </div>
 
         {/* OEM treemap */}
-        <Card title="OEM landscape · tile area = installations, colour = technology" className="mb-10">
+        <Card title="OEM landscape · tile area = installations, colour = technology · click a maker for its profile" className="mb-10">
           <ResponsiveContainer width="100%" height={260}>
             <Treemap data={OEM_TREEMAP} dataKey="size" aspectRatio={3} content={renderTile} isAnimationActive={false} />
           </ResponsiveContainer>
