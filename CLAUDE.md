@@ -49,6 +49,17 @@ python3 scripts/build_routes.py         # -> public/routes.json (pip install sea
 
 `init.sql` is a generated artifact — never hand-edit it, regenerate it.
 
+Pasting `init.sql` replaces every row, positions included. `build_supabase_sql.py`
+therefore reads the *current* positions out of Supabase (anon key from `.env.local`)
+and keeps whichever of live / `vessels.json` is newer per vessel. Before Oct 2026 it
+used `vessels.json` alone, and one paste rolled the whole map back to 25 June. If it
+prints `WARNING: falling back…`, don't paste until you've fixed the connection.
+
+Live fields (position, photo) belong to an **MMSI**, not to a row: both build scripts
+drop them when a row's MMSI is cleared or changed. Otherwise fixing a wrong identity
+leaves the other ship's dot on the globe forever, since the scraper skips rows with
+no MMSI and never overwrites it (Spa, Oct 2026).
+
 Both build scripts look columns up **by header name**, and hard-fail if an expected
 column is missing. Adding or reordering a column in the workbook is therefore safe; it
 was not before Aug 2026, when they indexed by position and a single inserted column
@@ -210,7 +221,27 @@ dot. They still count in every total — that's intended, not a bug.
 
 ## Open ideas, not yet built
 
-OEM drill-down page (fleet per WAPS maker) · back-filling the yard columns across the
-fleet (yard league table) · OEM locations on the map · flat 2D map toggle alongside the globe · alluvial Technology→ship-type chart ·
-`/data` raw table with CSV export · handling vessels that installed then uninstalled
-(planned as a `Removed Year` column + cumulative-ever-installed vs currently-active).
+Planned next, in rough order:
+
+- **`/data` raw table.** Every vessel, every column, sortable, with CSV export. Reads
+  the same `fetchVessels()` as everything else — see THE RULE above. Open question:
+  gating part of it (full export, or the unpublished columns) behind a sign-in or a
+  request form. Note that "hide it in the UI" hides nothing — the anon key and the RLS
+  select policy hand the whole table to anyone who opens devtools. Real gating means
+  Supabase Auth plus a second RLS policy, or holding the gated columns in a table the
+  anon role can't select at all.
+- **OEM pages.** One page per WAPS maker: their fleet, install timeline, technology mix,
+  ship types they've landed. The OEM name becomes a link *everywhere it appears* —
+  `VesselCard` details, the analytics charts, and the filter panel — so the drill-down is
+  reachable from anywhere the name is rendered, not just from an index page. Derive the
+  per-OEM figures inside `buildAnalytics`, same as any other chart.
+- **Literature and results.** A place for published performance and fuel-saving results —
+  sea-trial reports, class society studies, OEM claims — linked to the vessels and OEMs
+  they measure. Provenance matters more than the number here: whose figure, measured how,
+  over what route. Needs a source table of its own; it does not belong in the vessel
+  workbook.
+
+Looser, unscheduled: back-filling the yard columns across the fleet (yard league table) ·
+OEM locations on the map · flat 2D map toggle alongside the globe · alluvial
+Technology→ship-type chart · handling vessels that installed then uninstalled (planned as
+a `Removed Year` column + cumulative-ever-installed vs currently-active).
