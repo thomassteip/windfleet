@@ -27,10 +27,11 @@ Output format (coords are [lat, lng] to match the app's convention):
         "planned":   [[lat,lng], ...] | null }, # current position -> destination
       ... ]
 
-Run from the windfleet-app folder, after scraping positions:
+Runs DAILY in .github/workflows/refresh-positions.yml, right after the position
+refresh, against live Supabase, and commits public/routes.json. Locally:
     pip install searoute
-    python3 scripts/fetch_... (updates data/vessels.json)   # existing pipeline
-    python3 scripts/build_routes.py                         # -> public/routes.json
+    python3 scripts/build_routes.py      # routes the data/vessels.json snapshot
+    SUPABASE_URL=... SUPABASE_ANON_KEY=... python3 scripts/build_routes.py   # live
 """
 
 import json
@@ -47,40 +48,11 @@ except ImportError:
 APP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-# ── Port coordinate resolution (mirrors lib/ports.js + lib/locodes.js) ────────
-def parse_coord_file(path):
-    """Pull every  KEY: [lng, lat]  pair out of a lib/*.js coordinate file."""
-    text = open(path, encoding="utf8").read()
-    rx = re.compile(
-        r'(?:"([^"]+)"|([A-Za-z0-9][A-Za-z0-9 .\-]*?))\s*:\s*'
-        r"\[\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\]"
-    )
-    out = {}
-    for m in rx.finditer(text):
-        key = (m.group(1) or m.group(2)).strip().upper()
-        out[key] = [float(m.group(3)), float(m.group(4))]  # [lng, lat]
-    return out
-
-
-PORTS = parse_coord_file(os.path.join(APP, "lib", "ports.js"))
-LOCODES = parse_coord_file(os.path.join(APP, "lib", "locodes.js"))
-
-
-def port_by_name(name):
-    if not name:
-        return None
-    key = str(name).strip().upper().split(",")[0].strip()
-    key = re.sub(r"\s+(ANCH\.?|ANCHORAGE|BUNKERING.*|AREA.*)$", "", key).strip()
-    return PORTS.get(key)
-
-
-def resolve_port(name, locode):
-    """UN/LOCODE first (reliable), then by name. Returns [lng, lat] or None."""
-    if locode:
-        c = LOCODES.get(str(locode).strip().upper())
-        if c:
-            return c
-    return port_by_name(name)
+# ── Port coordinate resolution ────────────────────────────────────────────────
+# Shared with refresh_positions.py so the two can never disagree about a port:
+# lib/locodes.js (curated) > data/ports.json (~13k seaports) > lib/ports.js names.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from portlib import resolve_port  # noqa: E402
 
 
 # ── Geometry helpers ──────────────────────────────────────────────────────────
@@ -164,8 +136,36 @@ def route_leg(frm, to):
     return [[c[1], wrap(c[0])] for c in coords]  # -> [lat, lng]
 
 
+def load_fleet():
+    """The fleet to route: LIVE from Supabase when credentials are set (the daily
+    Action), else the bundled data/vessels.json snapshot (a local run).
+
+    Live matters twice over. Positions change daily, so a routes.json built from
+    the snapshot ends each line where the ship WAS. And ids come from workbook row
+    order: routes.json must be keyed to the ids the app is actually reading, which
+    are Supabase's — see the Ilha de Tinhare id-shift note in CLAUDE.md.
+    """
+    url = os.environ.get("SUPABASE_URL", "").rstrip("/")
+    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+    if not (url and key):
+        print("No SUPABASE_URL/key set: routing the data/vessels.json snapshot.")
+        return json.load(open(os.path.join(APP, "data", "vessels.json"), encoding="utf8"))
+    import urllib.request
+    req = urllib.request.Request(
+        f"{url}/rest/v1/vessels?select=id,lat,lng,destination,destination_locode,"
+        f"last_port,last_port_locode&order=id",
+        headers={"apikey": key, "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        rows = json.load(r)
+    print(f"Routing {len(rows)} vessels from live Supabase.")
+    return [{"id": r["id"], "lat": r["lat"], "lng": r["lng"],
+             "destination": r["destination"], "destinationLocode": r["destination_locode"],
+             "lastPort": r["last_port"], "lastPortLocode": r["last_port_locode"]}
+            for r in rows]
+
+
 def main():
-    vessels = json.load(open(os.path.join(APP, "data", "vessels.json"), encoding="utf8"))
+    vessels = load_fleet()
     out = []
     n_trav = n_plan = n_missing = 0
     for v in vessels:

@@ -33,8 +33,11 @@ changing it.
 `WindFleet_database.xlsx` (specs, hand-curated) → generated `supabase/init.sql` →
 pasted into the Supabase SQL editor → the app reads Supabase live at runtime.
 `data/vessels.json` is a bundled snapshot used only for first paint and offline
-fallback. Live AIS position/course/destination/photo are layered on by a daily
-GitHub Action.
+fallback. Live AIS position/course/heading/destination/last port are layered on by a
+daily GitHub Action, which also rebuilds `public/routes.json` and commits it. Photos are
+NOT live: they're curated in the workbook's `Photo URL` / `Photo Credit` columns.
+(Rows without one keep an older scraped MyShipTracking photo, captioned "via
+MyShipTracking"; those are other people's uploads, so replace them over time.)
 
 After editing the workbook:
 
@@ -73,7 +76,10 @@ row position, so removing one ship shifts all the ids below it up by one — and
 each shifted vessel silently draws *another ship's* voyage line, in that ship's
 technology colour. It happened in Sep 2026: dropping "Ilha de Tinhare" (id 92) moved 20
 vessels, and four of them ended up with tracks terminating thousands of km from the
-actual ship. So after any row deletion, always:
+actual ship. Since Oct 2026 the daily Action rebuilds `routes.json` from **live Supabase**, so
+after you paste a new `init.sql` the routes re-key themselves within a day. To fix it
+immediately after a row deletion, run the Action by hand (Actions tab → Refresh vessel
+positions → Run workflow), or locally:
 
 ```bash
 python3 scripts/build_routes.py       # -> public/routes.json, keyed to the NEW ids
@@ -203,15 +209,30 @@ dot. They still count in every total — that's intended, not a bug.
 - `app/globals.css` line 1 `@import`s Google Fonts. In a sandboxed shell with no network
   this makes `next build` hang forever at ~0% CPU with no error. Build on a machine with
   real network access.
-- Position data is scraped by `scripts/refresh_positions.py` (daily GitHub Action,
-  patches Supabase by row `id` using the service key), from TWO sources: MyShipTracking
-  for position/speed/course/nav-status/photo, VesselFinder for destination, last port
-  and their UN/LOCODEs. The VesselFinder pass is best-effort — if it fails, the position
-  fields still get written. A cloud IP hitting either daily may eventually get blocked;
-  if so only `scrape_mst()` / `scrape_vf_voyage()` need replacing.
-- `python3 scripts/refresh_positions.py --probe <IMO>` prints what the VesselFinder
-  parser sees for one vessel without touching Supabase. Use it first if the LOCODE
-  columns stop filling — it means VesselFinder restructured their markup.
+- Positions come from **Open Waters AIS** (openwaters.io, a volunteer receiver
+  network with a real API: no scraping), via `scripts/refresh_positions.py` in the daily
+  Action, which patches Supabase by row `id` with the service key. It replaced scraping
+  in Oct 2026: MyShipTracking put a Cloudflare bot check on every page around 27 Sep,
+  the old script got 0/113 positions yet exited 0, and the Action stayed green for a
+  week while the map froze. The script now **exits 1 if under half the fleet comes
+  back**. Don't weaken that check: a red ✗ is the only alarm there is.
+- `position_updated` is AIS's own `seen` time (when the message was heard), not when the
+  job ran, and the card shows it as "Last AIS fix N days ago". Coverage is dense near
+  Europe/N. America, thin mid-ocean, so ~20 ships routinely read a week or more old.
+  That's honest, not a bug. When a fix arrives, every field in it is written, empty
+  ones too, so a fresh position is never paired with a stale status or destination.
+- `python3 scripts/refresh_positions.py --dry-run` fetches and prints everything
+  without writing (falls back to the anon key in `.env.local`). Run it first when
+  something looks off.
+- AIS has no "last port". It's **detected**: the latest moment in the past 48 h the
+  ship sat still within 15 km of a known port. Destination is crew-typed free text,
+  usually a LOCODE in some spelling ("BE ANR", "DE HAM >> NL RTM"); `scripts/portlib.py`
+  parses it. Port coordinates: `lib/locodes.js` (curated, wins) > `data/ports.json`
+  (~13k seaports from UN/LOCODE + NGA World Port Index, built rarely by
+  `scripts/build_ports.py`) > `lib/ports.js` names. Many big ports have no coordinates
+  in the open data; the refresh prints them as "Unplaced destination codes". Add those
+  to `lib/locodes.js` by hand. `data/ports.json` is for scripts only: never import it
+  in the browser (~480 KB).
 - LOCODEs matter because port NAMES are ambiguous: "NEWCASTLE" is both Australia and
   the Tyne, and `lib/ports.js` has a single entry pointing at Australia. `resolvePort()`
   tries the LOCODE first, so filling those columns is what makes voyage lines correct

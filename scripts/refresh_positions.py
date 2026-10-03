@@ -1,57 +1,77 @@
 """
-Refresh vessel positions in Supabase
-------------------------------------
-Reads the fleet roster from Supabase, scrapes the latest known position for
-each vessel from MyShipTracking, and writes the positions back to Supabase.
+Refresh vessel positions in Supabase from Open Waters AIS
+---------------------------------------------------------
+Reads the fleet roster from Supabase, asks Open Waters (aiscast) for each
+vessel's last known AIS position, and writes it back to Supabase.
 
 Run automatically by .github/workflows/refresh-positions.yml (daily), or
 locally:
 
-    pip install requests beautifulsoup4
+    pip install requests
     export SUPABASE_URL="https://YOUR-PROJECT.supabase.co"
     export SUPABASE_SERVICE_KEY="your-service-role-key"   # secret! never commit
     python scripts/refresh_positions.py
 
-NOTE: position data comes from scraping MyShipTracking. This works, but a
-cloud IP hitting them daily may eventually be rate-limited or blocked. If that
-happens, switch to a proper AIS API (AISStream free tier, or MarineTraffic /
-Datalastic paid) — only the scrape_mst() function below would need to change.
+    python scripts/refresh_positions.py --dry-run   # fetch + print, write nothing
+
+WHY OPEN WATERS. Until Oct 2026 this scraped MyShipTracking (position, photo)
+and VesselFinder (ports). MyShipTracking put a Cloudflare bot check in front of
+every vessel page on ~27 Sep 2026; each request got a 403, the script found 0
+positions out of 113, and still exited 0 — so the Action showed a green tick
+for a week while the map froze. Open Waters is a real API (no scraping, nothing
+to break when a site changes its markup): https://openwaters.io/api/ais
+
+  * /v1/vessels?mmsi=...  last known position however long ago, with `seen` —
+    the time the AIS message was actually heard. That, not the time this
+    script ran, is what goes in position_updated, so an old fix reads as old.
+  * Anonymous access, 10 MMSIs per request. Set OPENWATERS_TOKEN (a free
+    personal token, https://openwaters.io/ais/token) to raise that to 50.
+  * Coverage is a volunteer receiver network: dense around Europe and North
+    America, thin in mid-ocean. A vessel out of range keeps its last fix.
+
+PORTS. AIS carries the crew-typed destination, which on most of the fleet is a
+UN/LOCODE in some spelling ("BE ANR", "DE HAM >> NL RTM"); portlib.py turns it
+into a clean port name + 5-char LOCODE. AIS has no "last port" at all, so it is
+DETECTED: the most recent time in the last 48 h the vessel sat still within
+LAST_PORT_KM of a known port. If none is found, last_port is left as it was.
+
+PHOTOS are not touched here any more — they are curated by hand in the
+workbook's "Photo URL" / "Photo Credit" columns (see build_supabase_sql.py).
+
+The run FAILS (exit 1) if fewer than MIN_FOUND_SHARE of the trackable fleet
+come back, so a broken source turns the Action red instead of silently green.
 """
 
 import os
-import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
-from bs4 import BeautifulSoup
 
-# TWO SOURCES, by design:
-#   MyShipTracking  -> position, speed, course, nav status, photo   (authoritative)
-#   VesselFinder    -> destination, last port, and their UN/LOCODEs (authoritative)
-# MyShipTracking's free-text destination is unreliable and carries no LOCODE.
-# VesselFinder publishes a LOCODE per port call, which is a far better key for
-# geocoding than a port NAME — "NEWCASTLE" is both Australia and the Tyne, and
-# name matching silently picks one. lib/ports.js resolvePort() tries the LOCODE
-# first and falls back to the name, so filling these columns makes the globe's
-# voyage lines correct rather than usually-correct.
-#
-# The VesselFinder pass is BEST EFFORT: if it fails for a vessel, the
-# MyShipTracking fields are still written exactly as before. It never blocks a
-# position update.
-#
-# Required columns on the Supabase `vessels` table:
-#   alter table vessels add column photo_url text;
-#   alter table vessels add column destination_locode text;
-#   alter table vessels add column last_port_locode text;
-# (All three are already in supabase/init.sql.)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import portlib  # noqa: E402
 
+DRY_RUN = "--dry-run" in sys.argv
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-DELAY_S = 1.5  # seconds between requests — be polite
+OW_TOKEN = os.environ.get("OPENWATERS_TOKEN", "")
 
-if not SUPABASE_URL or not SERVICE_KEY:
+OW = "https://ais.openwaters.io/v1"
+BATCH = 50 if OW_TOKEN else 10   # MMSIs per /v1/vessels request (tier cap)
+DELAY_S = 0.6                    # Open Waters allows 120 requests/min
+LAST_PORT_KM = 15                # "in port" = stationary this close to a port
+MIN_FOUND_SHARE = 0.5
+
+# AIS navigational status codes (ITU-R M.1371). 15 = "not defined" -> omitted.
+NAV_STATUS = {
+    0: "Under way using engine", 1: "At anchor", 2: "Not under command",
+    3: "Restricted manoeuvrability", 4: "Constrained by her draught",
+    5: "Moored", 6: "Aground", 7: "Engaged in fishing", 8: "Under way sailing",
+}
+STATIONARY = {1, 5, 6}
+
+if not DRY_RUN and (not SUPABASE_URL or not SERVICE_KEY):
     sys.exit("ERROR: set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.")
 
 REST = f"{SUPABASE_URL}/rest/v1/vessels"
@@ -60,229 +80,187 @@ SB_HEADERS = {
     "Authorization": f"Bearer {SERVICE_KEY}",
     "Content-Type": "application/json",
 }
+OW_HEADERS = {"User-Agent": "windfleet-refresh (github.com/thomassteip/windfleet)"}
+if OW_TOKEN:
+    OW_HEADERS["Authorization"] = f"Bearer {OW_TOKEN}"
 
-SCRAPE_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
+
+def iso(dt):
+    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_roster():
-    """Pull id, name, imo, mmsi for every vessel from Supabase."""
-    r = requests.get(
-        REST,
-        headers=SB_HEADERS,
-        params={"select": "id,name,imo,mmsi", "order": "id"},
-        timeout=30,
-    )
+    """id, name, imo, mmsi + current position stamp for every vessel."""
+    if DRY_RUN and not SERVICE_KEY:
+        # Read-only fallback for local testing: the app's anon key.
+        env = {}
+        path = os.path.join(portlib.APP, ".env.local")
+        for line in open(path):
+            if "=" in line and not line.lstrip().startswith("#"):
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+        url = env["NEXT_PUBLIC_SUPABASE_URL"].rstrip("/") + "/rest/v1/vessels"
+        hdr = {"apikey": env["NEXT_PUBLIC_SUPABASE_ANON_KEY"],
+               "Authorization": f"Bearer {env['NEXT_PUBLIC_SUPABASE_ANON_KEY']}"}
+    else:
+        url, hdr = REST, SB_HEADERS
+    r = requests.get(url, headers=hdr, timeout=30,
+                     params={"select": "id,name,imo,mmsi,position_updated", "order": "id"})
     r.raise_for_status()
     return r.json()
 
 
-def mst_url(mmsi, imo, name):
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return f"https://www.myshiptracking.com/vessels/{slug}-mmsi-{mmsi}-imo-{imo}"
-
-
-def scrape_mst(url):
-    """Return a dict of position fields, or None if no position found."""
-    try:
-        r = requests.get(url, headers=SCRAPE_HEADERS, timeout=15)
-        if r.status_code != 200:
-            return None
-    except Exception:
-        return None
-
-    text = r.text
+def fetch_latest(mmsis):
+    """mmsi(str) -> GeoJSON feature, for every MMSI Open Waters has heard."""
     out = {}
-
-    m = re.search(r"([-\d]+\.\d{3,})°\s*/\s*([-\d]+\.\d{3,})°", text)
-    if m:
-        lat, lon = float(m.group(1)), float(m.group(2))
-        if not (abs(lat) < 0.001 and abs(lon) < 0.001):
-            out["lat"] = round(lat, 5)
-            out["lng"] = round(lon, 5)
-
-    m = re.search(r"(\d+\.?\d*)\s*Knots", text)
-    if m:
-        out["speed"] = float(m.group(1))
-
-    # Course over ground (labelled + degree sign; reject AIS 360/511 sentinels).
-    cm = re.search(r"(?:Course|COG)[^\d\-]{0,15}(\d{1,3}(?:\.\d+)?)\s*°", text, re.I)
-    if cm and 0 <= float(cm.group(1)) < 360:
-        out["course"] = float(cm.group(1))
-
-    soup = BeautifulSoup(text, "html.parser")
-
-    # Nav status from the "Current Position" panel (not the Events log).
-    cp = re.search(r"Current Position(.*?)(?:Show on Live Map|Information|Info)", text, re.S)
-    region = cp.group(1) if cp else text
-    sm = re.search(
-        r"Status[\s\S]{0,80}?(At anchor|Moored|Under way(?: using engine)?|Not under command|Restricted manoeuvrability)",
-        region, re.I)
-    if sm:
-        out["nav_status"] = sm.group(1)[0].upper() + sm.group(1)[1:]
-
-    # Vessel photo (photos.myshiptracking.com host; skips the og:image placeholder).
-    pm = re.search(r"https://photos\.myshiptracking\.com/vessel/[^\s\"'<>)]+", text)
-    if pm:
-        out["photo_url"] = pm.group(0)
-
-    # Last port — most recent port call (first Last Port Calls row).
-    port_links = soup.select("table a[href*='/ports/']")
-    if port_links:
-        out["last_port"] = port_links[0].get_text(strip=True)
-
-    # Destination — last distinct port named in the "Current Trip" block.
-    tm = re.search(r"Current Trip(.*?)(?:Current Position|Last Port Calls)", text, re.S)
-    if tm:
-        names = [re.sub(r"<[^>]+>", "", a).strip()
-                 for a in re.findall(r"<a[^>]*?/ports/[^>]*?>(.*?)</a>", tm.group(1), re.S)]
-        names = [n for n in names if n]
-        if not out.get("last_port") and names:
-            out["last_port"] = names[0]
-        if len(names) >= 2 and names[-1].upper() != names[0].upper():
-            out["destination"] = names[-1]
-
-    return out if "lat" in out else None
-
-
-# UN/LOCODE is 5 chars (2 country + 3 place). VesselFinder appends a 3-digit
-# terminal/berth suffix, e.g. NLRTM001 — lib/locodes.js is keyed on that form.
-LOCODE_RE = re.compile(r"\b([A-Z]{2}[A-Z2-9]{3}\d{3})\b")
-
-
-def vf_url_for(imo):
-    return f"https://www.vesselfinder.com/vessels/details/{imo}"
-
-
-def scrape_vf_voyage(imo):
-    """Destination / last port + their LOCODEs from VesselFinder.
-
-    Returns a dict with any of destination, destination_locode, last_port,
-    last_port_locode — or {} on any failure. Never raises: this is an
-    enhancement, not a requirement.
-
-    NOTE: the selectors below target VesselFinder's vessel-detail markup. If
-    they ever restructure the page this quietly returns {} and the columns stop
-    filling — run with --probe IMO to see what is actually being parsed.
-    """
-    try:
-        r = requests.get(vf_url_for(imo), headers=SCRAPE_HEADERS, timeout=15)
+    for i in range(0, len(mmsis), BATCH):
+        chunk = mmsis[i:i + BATCH]
+        r = requests.get(f"{OW}/vessels", headers=OW_HEADERS, timeout=30,
+                         params={"mmsi": ",".join(chunk)})
         if r.status_code != 200:
-            return {}
-    except Exception:
-        return {}
-
-    soup = BeautifulSoup(r.text, "html.parser")
-    out = {}
-
-    # Port calls on VesselFinder link to /ports/<LOCODE>-<slug>; the anchor text
-    # is the clean port name and the href carries the code. The voyage block
-    # lists departure first, arrival second.
-    seen = []
-    for a in soup.select("a[href*='/ports/']"):
-        href = a.get("href", "")
-        name = a.get_text(strip=True)
-        m = LOCODE_RE.search(href.upper())
-        if not name or len(name) > 40:
-            continue
-        entry = (name, m.group(1) if m else None)
-        if entry not in seen:
-            seen.append(entry)
-
-    if seen:
-        out["last_port"], lp_code = seen[0]
-        if lp_code:
-            out["last_port_locode"] = lp_code
-    if len(seen) >= 2 and seen[-1][0].upper() != seen[0][0].upper():
-        out["destination"], d_code = seen[-1]
-        if d_code:
-            out["destination_locode"] = d_code
-
+            print(f"  Open Waters {r.status_code} for batch {i // BATCH + 1}: {r.text[:200]}")
+        else:
+            for f in r.json().get("features", []):
+                out[str(f["properties"].get("mmsi"))] = f
+        time.sleep(DELAY_S)
     return out
 
 
+def detect_last_port(mmsi, lng, lat, props):
+    """(name, locode) of the most recent port the vessel sat still in, or None.
+
+    Checks the current fix first, then walks the 48 h track backwards.
+    """
+    def stationary(sog, nav):
+        return nav in STATIONARY or (sog is not None and sog < 0.5)
+
+    if stationary(props.get("sog"), props.get("nav_status")):
+        hit = portlib.nearest_port(lng, lat, LAST_PORT_KM)
+        if hit:
+            return hit[1], hit[0]
+
+    since = iso(datetime.now(timezone.utc) - timedelta(hours=48))
+    try:
+        r = requests.get(f"{OW}/vessels/{mmsi}/track", headers=OW_HEADERS, timeout=30,
+                         params={"from": since, "interval": "10m"})
+        time.sleep(DELAY_S)
+        if r.status_code != 200:
+            return None
+        track = r.json()
+    except Exception:
+        return None
+    geom, p = track.get("geometry") or {}, track.get("properties") or {}
+    coords = geom.get("coordinates") or []
+    if geom.get("type") == "Point":
+        coords = [coords]
+    sogs, navs = p.get("sog") or [], p.get("nav_status") or []
+    checked = set()
+    for k in range(len(coords) - 1, -1, -1):
+        sog = sogs[k] if k < len(sogs) else None
+        nav = navs[k] if k < len(navs) else None
+        if not stationary(sog, nav):
+            continue
+        x, y = coords[k][0], coords[k][1]
+        cell = (round(x, 2), round(y, 2))   # skip re-checking the same berth
+        if cell in checked:
+            continue
+        checked.add(cell)
+        hit = portlib.nearest_port(x, y, LAST_PORT_KM)
+        if hit:
+            return hit[1], hit[0]
+    return None
+
+
+def to_fields(f):
+    """Open Waters feature -> Supabase column dict."""
+    p = f["properties"]
+    lng, lat = f["geometry"]["coordinates"][:2]
+    seen = datetime.fromisoformat(p["seen"].replace("Z", "+00:00"))
+    # Every field is written, None when AIS doesn't say: a fresh position must
+    # never be paired with an old fix's speed, status or destination.
+    num = lambda x, hi=None: (round(float(x), 1)
+                              if x is not None and (hi is None or 0 <= float(x) < hi) else None)
+    out = {
+        "lat": round(lat, 5), "lng": round(lng, 5), "position_updated": iso(seen),
+        "speed": num(p.get("sog")),
+        "course": num(p.get("cog"), 360),
+        "heading": num(p.get("heading"), 360),
+        "nav_status": NAV_STATUS.get(p.get("nav_status")),
+        "destination": None, "destination_locode": None,
+    }
+    return out, seen
+
+
 def patch_vessel(vessel_id, fields):
-    """Update one vessel's position fields in Supabase."""
-    r = requests.patch(
-        REST,
-        headers={**SB_HEADERS, "Prefer": "return=minimal"},
-        params={"id": f"eq.{vessel_id}"},
-        json=fields,
-        timeout=30,
-    )
+    r = requests.patch(REST, headers={**SB_HEADERS, "Prefer": "return=minimal"},
+                       params={"id": f"eq.{vessel_id}"}, json=fields, timeout=30)
     r.raise_for_status()
 
 
 def main():
     roster = get_roster()
-    print(f"Loaded {len(roster)} vessels from Supabase")
-    found, missed = 0, 0
+    tracked = [v for v in roster if v.get("imo") and v.get("mmsi")]
+    print(f"Loaded {len(roster)} vessels from Supabase; {len(tracked)} have IMO+MMSI")
 
-    for i, v in enumerate(roster, start=1):
-        name, imo, mmsi = v.get("name"), v.get("imo"), v.get("mmsi")
-        if not mmsi or not imo:
-            print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  no MMSI/IMO, skip")
+    latest = fetch_latest([str(v["mmsi"]) for v in tracked])
+    now = datetime.now(timezone.utc)
+    found = written = stale = failed = 0
+    unplaced = set()
+
+    for i, v in enumerate(tracked, start=1):
+        name = (v.get("name") or "")[:32]
+        f = latest.get(str(v["mmsi"]))
+        if not f:
+            print(f"[{i:3d}/{len(tracked)}] {name:32s}  not heard by Open Waters")
+            continue
+        found += 1
+        fields, seen = to_fields(f)
+        age_h = (now - seen).total_seconds() / 3600
+        if age_h > 24 * 7:
+            stale += 1
+
+        # Don't overwrite a NEWER fix (e.g. one pasted in from init.sql).
+        if (v.get("position_updated") or "") > fields["position_updated"]:
+            print(f"[{i:3d}/{len(tracked)}] {name:32s}  ours is newer, skip")
             continue
 
-        url = mst_url(mmsi, imo, name)
-        pos = scrape_mst(url)
+        props = f["properties"]
+        dest_name, dest_code, placed = portlib.parse_destination(props.get("destination"))
+        if dest_name:
+            fields["destination"] = dest_name
+            fields["destination_locode"] = dest_code if placed else None
+            if not placed and dest_code:
+                unplaced.add(dest_code)
 
-        if pos:
-            pos["position_updated"] = datetime.now(timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
-            pos["updated_at"] = pos["position_updated"]
-            pos["mst_url"] = url
-            pos["vf_url"] = vf_url_for(imo)
+        lp = detect_last_port(v["mmsi"], fields["lng"], fields["lat"], props)
+        if lp:
+            fields["last_port"], fields["last_port_locode"] = lp
 
-            # VesselFinder pass — authoritative for voyage, so it OVERWRITES the
-            # MyShipTracking destination/last_port when it has them.
-            time.sleep(DELAY_S)
-            voyage = scrape_vf_voyage(imo)
-            pos.update({k: v for k, v in voyage.items() if v})
+        fields["updated_at"] = iso(now)
+        try:
+            if not DRY_RUN:
+                patch_vessel(v["id"], fields)
+            written += 1
+            print(f"[{i:3d}/{len(tracked)}] {name:32s}  OK  seen {age_h:6.1f} h ago  "
+                  f"{fields.get('nav_status', '-')[:14]:14s}  "
+                  f"from={fields.get('last_port_locode') or '-':5s} "
+                  f"to={fields.get('destination_locode') or fields.get('destination') or '-'}")
+        except Exception as e:
+            failed += 1
+            print(f"[{i:3d}/{len(tracked)}] {name:32s}  write failed: {e}")
 
-            try:
-                patch_vessel(v["id"], pos)
-                loc = pos.get("last_port_locode") or "-"
-                dst = pos.get("destination_locode") or "-"
-                print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  OK  "
-                      f"lat={pos['lat']:.2f} lng={pos['lng']:.2f}  "
-                      f"from={loc} to={dst}")
-                found += 1
-            except Exception as e:
-                print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  upsert failed: {e}")
-                missed += 1
-        else:
-            print(f"[{i:2d}/{len(roster)}] {name[:36]:36s}  no position")
-            missed += 1
+    print(f"\nDone: {found}/{len(tracked)} heard by Open Waters, {written} written"
+          f"{' (dry run — nothing saved)' if DRY_RUN else ''}, {failed} write errors; "
+          f"{stale} last heard over a week ago.")
+    if unplaced:
+        print("Unplaced destination codes (add to lib/locodes.js): " + ", ".join(sorted(unplaced)))
 
-        time.sleep(DELAY_S)
-
-    print(f"\nDone: {found} updated, {missed} without a fresh position.")
-
-
-def probe(imo):
-    """Print exactly what the VesselFinder parser sees for one IMO.
-
-    Use this to check the selectors without touching Supabase:
-        python3 scripts/refresh_positions.py --probe 9708617
-    """
-    print(f"GET {vf_url_for(imo)}")
-    got = scrape_vf_voyage(imo)
-    if not got:
-        print("  nothing parsed — page fetch failed, or the selectors need updating")
-        return
-    for k in ("last_port", "last_port_locode", "destination", "destination_locode"):
-        print(f"  {k:20s} {got.get(k) or '-'}")
+    if tracked and found < MIN_FOUND_SHARE * len(tracked):
+        sys.exit(f"FAIL: only {found} of {len(tracked)} vessels found — the source is "
+                 f"probably down or has changed. Nothing is wrong with the fleet data.")
+    if failed:
+        sys.exit(f"FAIL: {failed} Supabase writes failed.")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2 and sys.argv[1] == "--probe":
-        probe(sys.argv[2])
-    else:
-        main()
+    main()

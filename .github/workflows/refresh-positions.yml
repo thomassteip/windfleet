@@ -9,6 +9,9 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    # Pushes the rebuilt public/routes.json — the default token is read-only.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -17,10 +20,37 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: pip install requests searoute
 
-      - name: Scrape positions and update Supabase
+      # Exits non-zero (red ✗, and GitHub emails you) if fewer than half the
+      # fleet comes back — a dead source must never look like a green run again.
+      - name: Fetch AIS positions from Open Waters and update Supabase
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # Optional. Without it Open Waters is used anonymously (10 MMSIs per
+          # request, which is plenty); a free personal token raises that to 50.
+          OPENWATERS_TOKEN: ${{ secrets.OPENWATERS_TOKEN }}
         run: python scripts/refresh_positions.py
+
+      # Voyage lines are precomputed, so they must be rebuilt whenever the
+      # positions move — otherwise each line ends where the ship used to be.
+      - name: Rebuild voyage routes from the live fleet
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python scripts/build_routes.py
+
+      - name: Commit routes if they changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- public/routes.json; then
+            echo "Routes unchanged, skipping commit."
+          else
+            git add public/routes.json
+            git commit -m "Refresh voyage routes"
+            # The wind workflow pushes too; take its commits first.
+            git pull --rebase
+            git push
+          fi

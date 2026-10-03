@@ -21,6 +21,27 @@ function Row({ label, value, mono }) {
   );
 }
 
+// "3 h ago" / "12 days ago" from an ISO timestamp. positionUpdated is the time
+// the AIS message was HEARD (Open Waters' `seen`), not when our job ran, so an
+// old value genuinely means the ship hasn't been picked up since.
+function ago(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const h = (Date.now() - t) / 36e5;
+  if (h < 1) return "under an hour ago";
+  if (h < 48) return `${Math.round(h)} h ago`;
+  return `${Math.round(h / 24)} days ago`;
+}
+
+// Curated photos carry a credit from the workbook. Older scraped ones don't,
+// so name the site they're served from rather than show them uncredited.
+function photoCredit(v) {
+  if (v.photoCredit) return v.photoCredit;
+  if (/myshiptracking\.com/.test(v.photoUrl || "")) return "via MyShipTracking";
+  if (/vesselfinder\.(com|net)/.test(v.photoUrl || "")) return "via VesselFinder";
+  return null;
+}
+
 export default function VesselCard({ vessel, onClose }) {
   if (!vessel) return null;
   const color = techColor(vessel.technology);
@@ -55,9 +76,9 @@ export default function VesselCard({ vessel, onClose }) {
         </button>
       </div>
 
-      {/* Ship photo (scraped from VesselFinder; hidden if it fails to load) */}
+      {/* Ship photo — workbook "Photo URL" / "Photo Credit"; hidden if it fails to load */}
       {vessel.photoUrl && (
-        <div className="mt-4 overflow-hidden rounded-xl border border-edge/50">
+        <figure className="mt-4 overflow-hidden rounded-xl border border-edge/50">
           <img
             src={vessel.photoUrl}
             alt={vessel.name}
@@ -68,7 +89,12 @@ export default function VesselCard({ vessel, onClose }) {
               e.currentTarget.parentElement.style.display = "none";
             }}
           />
-        </div>
+          {photoCredit(vessel) && (
+            <figcaption className="px-2 py-1 text-right text-[10px] text-muted/70">
+              Photo: {photoCredit(vessel)}
+            </figcaption>
+          )}
+        </figure>
       )}
 
       {/* Live position block */}
@@ -100,9 +126,15 @@ export default function VesselCard({ vessel, onClose }) {
             label="Last port"
             value={vessel.lastPort}
           />
-          {vessel.positionUpdated && (
-            <p className="mt-1.5 text-[10px] text-muted/60">
-              Updated {vessel.positionUpdated}
+          {vessel.positionUpdated && ago(vessel.positionUpdated) && (
+            <p
+              className="mt-1.5 text-[10px] text-muted/60"
+              title={vessel.positionUpdated}
+            >
+              Last AIS fix{" "}
+              <span className="font-mono tabular-nums">
+                {ago(vessel.positionUpdated)}
+              </span>
             </p>
           )}
         </div>
