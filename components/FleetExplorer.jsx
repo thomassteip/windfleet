@@ -9,9 +9,10 @@ import ThemeToggle from "./ThemeToggle";
 import VesselSearch from "./VesselSearch";
 import InfoButton from "./InfoButton";
 import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
+import MakerPanel from "./MakerPanel";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
-import { shipBucket } from "@/lib/analytics";
+import { shipBucket, buildAnalytics, hasMaker, makerSlug } from "@/lib/analytics";
 import { speedColor, SPEED_MAX } from "@/lib/wind";
 import { useIsMobile, useHasHover } from "@/lib/useMediaQuery";
 
@@ -72,7 +73,15 @@ function WindVariantSwitch({ value, onChange }) {
   );
 }
 
-export default function FleetExplorer() {
+// "/makers" -> "index", "/makers/norsepower" -> "norsepower", else null.
+function makerFromPath(path) {
+  const m = path.match(/^\/makers(?:\/([^/]+))?\/?$/);
+  return m ? m[1] || "index" : null;
+}
+
+// initialMaker: set by the /makers routes, so the explorer opens with the
+// maker panel already showing ("index" for the list, or a maker's slug).
+export default function FleetExplorer({ initialMaker = null }) {
   const { theme } = useTheme();
   const isMobile = useIsMobile();
   const hasHover = useHasHover();
@@ -96,11 +105,40 @@ export default function FleetExplorer() {
   const [windVariant, setWindVariant] = useState("average"); // "live" | "average"
   const [windMeta, setWindMeta] = useState(null);
 
+  // Maker panel: null (closed), "index", or a maker slug. It lives in this
+  // component's state rather than in a separate page, so moving between makers
+  // never reloads the globe; the address bar is kept in step by hand so every
+  // maker view is still a shareable /makers/<slug> link.
+  const [maker, setMaker] = useState(initialMaker);
+  const makerOpen = maker != null;
+
   const analyticsOpen = analyticsMode !== "closed";
+  // Either right-hand panel (analytics or maker) takes the same slot.
+  const panelOpen = analyticsOpen || makerOpen;
   const closeAnalytics = () => {
     setAnalyticsMode("closed");
     setAnalyticsHl(null);
   };
+
+  const openMaker = useCallback((slug) => {
+    setMaker(slug);
+    setAnalyticsMode("closed");
+    setAnalyticsHl(null);
+    const path = slug == null ? "/" : slug === "index" ? "/makers" : `/makers/${slug}`;
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+  }, []);
+
+  const openAnalytics = () => {
+    if (makerOpen) openMaker(null);
+    setAnalyticsMode("quarter");
+  };
+
+  // Back/forward between maker views.
+  useEffect(() => {
+    const onPop = () => setMaker(makerFromPath(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // Load the live fleet from Supabase once on mount; keep the bundled snapshot
   // if Supabase isn't configured or is unreachable.
@@ -161,8 +199,8 @@ export default function FleetExplorer() {
   // On phones, opening a vessel card or the analytics panel should tuck the
   // filter sheet away so it isn't stacked behind them.
   useEffect(() => {
-    if (selected || analyticsOpen) setFiltersOpen(false);
-  }, [selected, analyticsOpen]);
+    if (selected || panelOpen) setFiltersOpen(false);
+  }, [selected, panelOpen]);
 
   const activeFilterCount =
     filters.techs.size + filters.types.size + filters.installTypes.size;
@@ -182,7 +220,29 @@ export default function FleetExplorer() {
   // arrives as { dim, value }: the value alone is ambiguous, and each dimension
   // matches a different vessel field — ship types go through the SAME bucketing
   // the charts use, so clicking "Other" or "Ro-Ro / Ropax" works too.
+  // Per-maker profiles, from the same live fleet as everything else.
+  const fleetStats = useMemo(() => buildAnalytics(vessels), [vessels]);
+
+  // With a maker open, the globe shows exactly that maker's fleet — ignoring
+  // the (hidden) filter column, so the dots always match the panel's list.
+  const makerVessels = useMemo(() => {
+    if (!maker || maker === "index") return null;
+    return vessels.filter((v) => hasMaker(v.oem) && makerSlug(v.oem) === maker);
+  }, [vessels, maker]);
+
+  // Keep the tab title in step with the panel. The /makers routes set the
+  // first one server-side; moving between makers here doesn't reload the page.
+  useEffect(() => {
+    const m = fleetStats.MAKERS.find((x) => x.slug === maker);
+    document.title = m
+      ? `${m.name} — WindFleet`
+      : maker === "index"
+      ? "WindFleet — WAPS makers"
+      : "WindFleet — The Global Wind-Assisted Propulsion Fleet";
+  }, [maker, fleetStats]);
+
   const globeVessels = useMemo(() => {
+    if (makerVessels) return makerVessels;
     if (!analyticsHl) return filtered;
     const { dim, value } = analyticsHl;
     const matches =
@@ -195,7 +255,7 @@ export default function FleetExplorer() {
     // A highlight that matches nothing (e.g. filters already exclude it) would
     // blank the globe — leave the current view alone instead.
     return hit.length ? hit : filtered;
-  }, [filtered, analyticsHl]);
+  }, [filtered, analyticsHl, makerVessels]);
 
   // Search pick: select the vessel (card opens, globe flies there). If the
   // current filters or a chart highlight would hide its dot, clear them first
@@ -290,8 +350,11 @@ export default function FleetExplorer() {
     [hoverPaths, selectedPaths]
   );
 
+  // overflow-clip, not -hidden: the side panels park off-screen to the right,
+  // and with -hidden the browser can still scroll <main> sideways to "reveal" a
+  // focused button, shoving the whole view 360px left.
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-ink">
+    <main className="relative h-screen w-screen overflow-clip bg-ink">
       <div
         className="pointer-events-none absolute inset-0"
         style={{
@@ -306,7 +369,7 @@ export default function FleetExplorer() {
           mode it shrinks to the left so the analytics panel sits beside it. */}
       <div
         className={`absolute inset-y-0 left-0 z-0 transition-[right] duration-500 ease-in-out ${
-          analyticsMode === "quarter" ? "right-0 md:right-1/4" : "right-0"
+          analyticsMode === "quarter" || makerOpen ? "right-0 md:right-1/4" : "right-0"
         }`}
       >
         <GlobeView
@@ -339,10 +402,16 @@ export default function FleetExplorer() {
           <VesselSearch vessels={vessels} onPick={handleSearchPick} />
         </div>
         <div className="pointer-events-auto flex items-center gap-3">
+          <button
+            onClick={() => openMaker("index")}
+            className="rounded-lg border border-edge/60 bg-panel/70 px-3 py-2 font-mono text-[11px] lowercase text-muted backdrop-blur-md transition hover:border-accent hover:text-fg"
+          >
+            makers
+          </button>
           <ThemeToggle />
           <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
             <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
-              {String(filtered.length).padStart(2, "0")}
+              {String((makerVessels || filtered).length).padStart(2, "0")}
             </div>
             <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
               vessels
@@ -367,15 +436,15 @@ export default function FleetExplorer() {
         className={`z-30 flex flex-col gap-3 transition-all duration-300 ${
           isMobile
             ? `scroll-thin fixed inset-x-3 bottom-3 max-h-[78vh] overflow-y-auto ${
-                filtersOpen && !analyticsOpen
+                filtersOpen && !panelOpen
                   ? "pointer-events-auto translate-y-0 opacity-100"
                   : "pointer-events-none translate-y-[115%] opacity-0"
               }`
             : `pointer-events-none absolute bottom-6 left-6 top-24 ${
-                analyticsOpen ? "opacity-0" : "opacity-100"
+                panelOpen ? "opacity-0" : "opacity-100"
               }`
         }`}
-        aria-hidden={isMobile ? !filtersOpen : analyticsOpen}
+        aria-hidden={isMobile ? !filtersOpen : panelOpen}
       >
         {isMobile && (
           <div className="pointer-events-auto flex items-center justify-between px-1.5 pt-0.5">
@@ -441,11 +510,15 @@ export default function FleetExplorer() {
       <div
         className={`transition-all duration-500 ease-in-out ${
           isMobile
-            ? "fixed inset-x-3 bottom-3 z-40"
-            : `absolute top-24 z-20 ${analyticsOpen ? "left-6" : "right-6"}`
+            ? "fixed inset-x-3 bottom-3 z-50"
+            : `absolute top-24 z-20 ${panelOpen ? "left-6" : "right-6"}`
         }`}
       >
-        <VesselCard vessel={selected} onClose={() => setSelected(null)} />
+        <VesselCard
+          vessel={selected}
+          onClose={() => setSelected(null)}
+          onOpenMaker={(name) => openMaker(makerSlug(name))}
+        />
       </div>
 
       {/* Hover preview — follows the pointer (pointer devices only; phones use
@@ -494,7 +567,7 @@ export default function FleetExplorer() {
       <InfoButton />
 
       {/* Mobile-only Filters button — opens the slide-up sheet. */}
-      {isMobile && !filtersOpen && !analyticsOpen && !selected && (
+      {isMobile && !filtersOpen && !panelOpen && !selected && (
         <button
           onClick={() => setFiltersOpen(true)}
           aria-label="Open filters and layers"
@@ -513,9 +586,9 @@ export default function FleetExplorer() {
       )}
 
       {/* Right-edge handle to open analytics */}
-      {!analyticsOpen && (
+      {!panelOpen && (
         <button
-          onClick={() => setAnalyticsMode("quarter")}
+          onClick={openAnalytics}
           aria-label="Open fleet analytics"
           className="group absolute right-0 top-1/2 z-20 flex -translate-y-1/2 items-center gap-2 rounded-l-xl border border-r-0 border-edge/60 bg-panel/80 py-5 pl-3 pr-2 backdrop-blur-md transition hover:bg-panel"
         >
@@ -545,6 +618,27 @@ export default function FleetExplorer() {
             onExpand={() => setAnalyticsMode("full")}
             onCollapse={() => setAnalyticsMode("quarter")}
             onHighlight={setAnalyticsHl}
+            onOpenMaker={openMaker}
+          />
+        )}
+      </div>
+
+      {/* Maker panel — same slot and width as the analytics panel */}
+      <div
+        className={`absolute inset-y-0 right-0 z-40 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out left-0 border-l-0 md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-edge/60 ${
+          makerOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+        aria-hidden={!makerOpen}
+      >
+        {makerOpen && (
+          <MakerPanel
+            makers={fleetStats.MAKERS}
+            slug={maker}
+            lastYear={fleetStats.LAST_YEAR}
+            selectedId={selected?.id}
+            onOpen={openMaker}
+            onClose={() => openMaker(null)}
+            onSelectVessel={setSelected}
           />
         )}
       </div>

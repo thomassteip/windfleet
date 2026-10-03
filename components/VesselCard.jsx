@@ -1,6 +1,7 @@
 "use client";
 
 import { techColor } from "@/lib/theme";
+import { hasMaker } from "@/lib/analytics";
 
 function Row({ label, value, mono }) {
   if (value === null || value === undefined || value === "" || value === "None")
@@ -42,7 +43,7 @@ function photoCredit(v) {
   return null;
 }
 
-export default function VesselCard({ vessel, onClose }) {
+export default function VesselCard({ vessel, onClose, onOpenMaker }) {
   if (!vessel) return null;
   const color = techColor(vessel.technology);
   const num = (v, suffix = "") =>
@@ -141,7 +142,23 @@ export default function VesselCard({ vessel, onClose }) {
       )}
 
       <div className="mt-3">
-        <Row label="OEM" value={vessel.oem !== "None" ? vessel.oem : null} />
+        <Row
+          label="OEM"
+          value={
+            hasMaker(vessel.oem) ? (
+              onOpenMaker ? (
+                <button
+                  onClick={() => onOpenMaker(vessel.oem)}
+                  className="text-accent underline decoration-dotted underline-offset-2 transition hover:text-fg"
+                >
+                  {vessel.oem}
+                </button>
+              ) : (
+                vessel.oem
+              )
+            ) : null
+          }
+        />
         <Row label="Units" value={vessel.units} mono />
         <Row
           label="System size"
