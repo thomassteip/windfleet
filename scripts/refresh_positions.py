@@ -24,6 +24,13 @@ to break when a site changes its markup): https://openwaters.io/api/ais
   * /v1/vessels?mmsi=...  last known position however long ago, with `seen` —
     the time the AIS message was actually heard. That, not the time this
     script ran, is what goes in position_updated, so an old fix reads as old.
+  * BUT `seen` is the newest message of ANY kind, and only a PositionReport
+    carries coordinates. When the newest is ShipStaticData (name, destination,
+    draught: no lat/lng), the coordinates are from an older report and `seen`
+    overstates their freshness. BarentsWatch's satellite feed does this a lot:
+    in Oct 2026 Pacific Sentinel read "Last seen 12 h ago" on a 16-day-old fix
+    in Biscay while it was really leaving Puerto Rico. position_fix_time()
+    reads the true time off the vessel's track instead.
   * Anonymous access, 10 MMSIs per request. Set OPENWATERS_TOKEN (a free
     personal token, https://openwaters.io/ais/token) to raise that to 50.
   * Coverage is a volunteer receiver network: dense around Europe and North
@@ -32,8 +39,12 @@ to break when a site changes its markup): https://openwaters.io/api/ais
 PORTS. AIS carries the crew-typed destination, which on most of the fleet is a
 UN/LOCODE in some spelling ("BE ANR", "DE HAM >> NL RTM"); portlib.py turns it
 into a clean port name + 5-char LOCODE. AIS has no "last port" at all, so it is
-DETECTED: the most recent time in the last 48 h the vessel sat still within
-LAST_PORT_KM of a known port. If none is found, last_port is left as it was.
+DETECTED: the most recent time the vessel sat still within LAST_PORT_KM of a
+known port, from its track: the last 48 h at 10-minute resolution first (catches
+short ferry turnarounds), then the last 30 days hourly. If none is found,
+last_port is left as it was. Before Oct 2026 only the 48 h window was searched,
+so any call the receivers missed left last_port stale for weeks: Berge Olympus
+read "Ilha Guaiba" a month after it had been to China and back.
 
 PHOTOS are not touched here any more — they are curated by hand in the
 workbook's "Photo URL" / "Photo Credit" columns (see build_supabase_sql.py).
@@ -62,6 +73,14 @@ BATCH = 50 if OW_TOKEN else 10   # MMSIs per /v1/vessels request (tier cap)
 DELAY_S = 0.6                    # Open Waters allows 120 requests/min
 LAST_PORT_KM = 15                # "in port" = stationary this close to a port
 MIN_FOUND_SHARE = 0.5
+# position_fix_time(): fine track for recent fixes, coarse for older ones. The
+# coarse one keeps one point per 6 h bucket, so it can read up to 6 h early.
+FIX_TRACKS = ((timedelta(days=2), "10m", timedelta(minutes=10)),
+              (timedelta(days=60), "6h", timedelta(hours=6)))
+# detect_last_port(): fine and short first, then long and hourly. 30 days
+# matches build_routes.py's TRACK_DAYS, so the card's last port and the start
+# of the drawn voyage agree. (Open Waters keeps only ~6 weeks anyway.)
+PORT_TRACKS = ((timedelta(hours=48), "10m"), (timedelta(days=30), "1h"))
 
 # AIS navigational status codes (ITU-R M.1371). 15 = "not defined" -> omitted.
 NAV_STATUS = {
@@ -105,7 +124,7 @@ def get_roster():
     else:
         url, hdr = REST, SB_HEADERS
     r = requests.get(url, headers=hdr, timeout=30,
-                     params={"select": "id,name,imo,mmsi,position_updated", "order": "id"})
+                     params={"select": "id,name,imo,mmsi,lat,lng,position_updated", "order": "id"})
     r.raise_for_status()
     return r.json()
 
@@ -126,10 +145,33 @@ def fetch_latest(mmsis):
     return out
 
 
+def position_fix_time(mmsi, seen):
+    """When the coordinates Open Waters returned were actually reported.
+
+    Only called when the newest message isn't a PositionReport, so `seen` may
+    be newer than the position. The track holds position reports only; its
+    last point is the real fix. Returns `seen` if the track agrees with it to
+    within its sampling interval, or if there's no track to check against.
+    """
+    now = datetime.now(timezone.utc)
+    for window, interval, slack in FIX_TRACKS:
+        try:
+            r = requests.get(f"{OW}/vessels/{mmsi}/track", headers=OW_HEADERS, timeout=30,
+                             params={"from": iso(now - window), "interval": interval})
+            time.sleep(DELAY_S)
+            times = (r.json().get("properties") or {}).get("times") or [] if r.ok else []
+        except Exception:
+            times = []
+        if times:
+            last = datetime.fromisoformat(times[-1].replace("Z", "+00:00"))
+            return seen if seen - last <= slack else last
+    return seen
+
+
 def detect_last_port(mmsi, lng, lat, props):
     """(name, locode) of the most recent port the vessel sat still in, or None.
 
-    Checks the current fix first, then walks the 48 h track backwards.
+    Checks the current fix first, then walks each PORT_TRACKS window backwards.
     """
     def stationary(sog, nav):
         return nav in STATIONARY or (sog is not None and sog < 0.5)
@@ -139,10 +181,19 @@ def detect_last_port(mmsi, lng, lat, props):
         if hit:
             return hit[1], hit[0]
 
-    since = iso(datetime.now(timezone.utc) - timedelta(hours=48))
+    for window, interval in PORT_TRACKS:
+        hit = _last_port_on_track(mmsi, window, interval, stationary)
+        if hit:
+            return hit
+    return None
+
+
+def _last_port_on_track(mmsi, window, interval, stationary):
+    """Walk one track window backwards to the latest still-in-port fix."""
+    since = iso(datetime.now(timezone.utc) - window)
     try:
         r = requests.get(f"{OW}/vessels/{mmsi}/track", headers=OW_HEADERS, timeout=30,
-                         params={"from": since, "interval": "10m"})
+                         params={"from": since, "interval": interval})
         time.sleep(DELAY_S)
         if r.status_code != 200:
             return None
@@ -215,12 +266,22 @@ def main():
             continue
         found += 1
         fields, seen = to_fields(f)
+        if f["properties"].get("msg_type") != "PositionReport":
+            fix = position_fix_time(v["mmsi"], seen)
+            if fix != seen:
+                seen = fix
+                fields["position_updated"] = iso(fix)
         age_h = (now - seen).total_seconds() / 3600
         if age_h > 24 * 7:
             stale += 1
 
-        # Don't overwrite a NEWER fix (e.g. one pasted in from init.sql).
-        if (v.get("position_updated") or "") > fields["position_updated"]:
+        # Don't overwrite a NEWER fix (e.g. one pasted in from init.sql) --
+        # unless it's this same fix, wrongly stamped with a static message's
+        # time before position_fix_time() existed. Then restamp it.
+        same_fix = (v.get("lat") is not None and v.get("lng") is not None
+                    and abs(v["lat"] - fields["lat"]) < 1e-4
+                    and abs(v["lng"] - fields["lng"]) < 1e-4)
+        if not same_fix and (v.get("position_updated") or "") > fields["position_updated"]:
             print(f"[{i:3d}/{len(tracked)}] {name:32s}  ours is newer, skip")
             continue
 
