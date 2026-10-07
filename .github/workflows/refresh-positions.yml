@@ -6,6 +6,12 @@ on:
     - cron: "0 5 * * *"
   workflow_dispatch: {} # lets you run it manually from the Actions tab
 
+# A second run (manual click while the 05:00 one is going) waits its turn
+# instead of racing the first one to push routes.json.
+concurrency:
+  group: refresh-positions
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -48,9 +54,24 @@ jobs:
           if git diff --quiet -- public/routes.json; then
             echo "Routes unchanged, skipping commit."
           else
-            git add public/routes.json
-            git commit -m "Refresh voyage routes"
-            # The wind workflow pushes too; take its commits first.
-            git pull --rebase
-            git push
+            # routes.json is rebuilt whole from live Supabase, so ours is the
+            # freshest copy: never merge it, just lay it on top of whatever
+            # main is now. (A `git pull --rebase` here conflicted whenever
+            # another run had pushed routes in the meantime, Oct 2026.)
+            cp public/routes.json "$RUNNER_TEMP/routes.json"
+            for attempt in 1 2 3; do
+              git fetch -q origin main
+              git reset -q --hard origin/main
+              cp "$RUNNER_TEMP/routes.json" public/routes.json
+              if git diff --quiet -- public/routes.json; then
+                echo "Routes already up to date on main."
+                exit 0
+              fi
+              git add public/routes.json
+              git commit -m "Refresh voyage routes"
+              # Fails only if the wind workflow pushed in the last few seconds.
+              git push origin HEAD:main && exit 0
+              sleep 10
+            done
+            exit 1
           fi
