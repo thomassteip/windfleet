@@ -327,7 +327,7 @@ function routesFeatureCollection(paths) {
           type: "Feature",
           properties: {
             color: p.color,
-            fleet: !!p.fleet,
+            preview: !!p.preview,
             planned: !!p.planned,
           },
           geometry:
@@ -427,34 +427,49 @@ function GlobeView({
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": ["get", "color"],
-          "line-width": ["case", ["get", "fleet"], 3, 7],
-          "line-blur": ["case", ["get", "fleet"], 2.5, 5],
-          "line-opacity": 0.45,
+          "line-width": ["case", ["get", "preview"], 3, 7],
+          "line-blur": ["case", ["get", "preview"], 2.5, 5],
+          "line-opacity": ["case", ["get", "preview"], 0.3, 0.45],
         },
       });
     }
-    // Fleet routes: crisp, bright, solid.
-    if (!map.getLayer("routes-fleet")) {
+    // Hovered vessel's route: a thin, faint preview of both legs.
+    if (!map.getLayer("routes-preview")) {
       map.addLayer({
-        id: "routes-fleet",
+        id: "routes-preview",
         type: "line",
         source: "routes",
-        filter: ["==", ["get", "fleet"], true],
+        filter: ["==", ["get", "preview"], true],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": ["get", "color"],
           "line-width": 1.7,
-          "line-opacity": 0.95,
+          "line-opacity": 0.75,
         },
       });
     }
-    // Selected vessel's route: thicker, dashed (animated below).
+    // Selected vessel, where it has been: thick and solid.
+    if (!map.getLayer("routes-travelled")) {
+      map.addLayer({
+        id: "routes-travelled",
+        type: "line",
+        source: "routes",
+        filter: ["all", ["!=", ["get", "preview"], true], ["!=", ["get", "planned"], true]],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": 3.2,
+          "line-opacity": 1,
+        },
+      });
+    }
+    // Selected vessel, where it is heading: thick, dashed (animated below).
     if (!map.getLayer("routes-active")) {
       map.addLayer({
         id: "routes-active",
         type: "line",
         source: "routes",
-        filter: ["!=", ["get", "fleet"], true],
+        filter: ["all", ["!=", ["get", "preview"], true], ["==", ["get", "planned"], true]],
         layout: { "line-cap": "round", "line-join": "round" },
         paint: {
           "line-color": ["get", "color"],

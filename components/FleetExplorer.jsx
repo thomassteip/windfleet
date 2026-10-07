@@ -195,10 +195,10 @@ export default function FleetExplorer() {
     return hit.length ? hit : filtered;
   }, [filtered, analyticsHl]);
 
-  // Fleet sea-routes are precomputed offline (scripts/build_routes.py →
-  // public/routes.json) with the searoute engine, so the whole-fleet overlay
-  // AND each vessel's click route load instantly from one static file — no
-  // live route API, nothing to restart. Each entry is
+  // Sea-routes are precomputed offline (scripts/build_routes.py →
+  // public/routes.json) with the searoute engine, so a vessel's route draws
+  // instantly from one static file — no live route API, nothing to restart.
+  // Each entry is
   //   { id, travelled: [[lat,lng],...]|null, planned: [[lat,lng],...]|null }
   // travelled = last port → current position, planned = current → destination.
   const [allRoutes, setAllRoutes] = useState([]);
@@ -214,20 +214,6 @@ export default function FleetExplorer() {
       cancelled = true;
     };
   }, []);
-  // Faint whole-fleet overlay: the travelled leg of every shown vessel, coloured
-  // by technology. Filtered to the vessels currently visible so the tech/type
-  // filters dim their routes too. Colour at full strength here; opacity/glow is
-  // controlled in the map layer.
-  const fleetRoutes = useMemo(() => {
-    const byId = new Map(globeVessels.map((v) => [v.id, v]));
-    return allRoutes
-      .filter((r) => byId.has(r.id) && r.travelled)
-      .map((r) => ({
-        coords: r.travelled,
-        color: techColor(byId.get(r.id).technology),
-        fleet: true,
-      }));
-  }, [allRoutes, globeVessels]);
 
   const counts = useMemo(() => {
     const tech = {};
@@ -237,30 +223,50 @@ export default function FleetExplorer() {
     return { tech };
   }, [filtered]);
 
-  // Full voyage for the selected vessel — looked up instantly from the same
-  // precomputed routes.json (no fetch, no pathfinding). Two legs:
+  // Routes are drawn for one vessel at a time, never the whole fleet: a line
+  // per ship buried the dots under a tangle, and the longest (least certain)
+  // lines took the most ink. Looked up instantly from routes.json. Two legs:
   //   travelled  last port → current position  (solid)
   //   planned    current position → destination (dashed, animated in GlobeView)
   // Either leg may be null (vessel in port, no destination, or no sea route);
   // we simply draw whichever exists.
-  const routePaths = useMemo(() => {
-    if (!selected) return [];
-    const entry = allRoutes.find((r) => r.id === selected.id);
-    if (!entry) return [];
-    const color = techColor(selected.technology);
-    const paths = [];
-    if (entry.travelled)
-      paths.push({ coords: entry.travelled, color, planned: false });
-    if (entry.planned)
-      paths.push({ coords: entry.planned, color, planned: true });
-    return paths;
-  }, [selected, allRoutes]);
+  const legsFor = useCallback(
+    (v, preview) => {
+      if (!v) return [];
+      const entry = allRoutes.find((r) => r.id === v.id);
+      if (!entry) return [];
+      const color = techColor(v.technology);
+      const paths = [];
+      if (entry.travelled)
+        paths.push({ coords: entry.travelled, color, planned: false, preview });
+      if (entry.planned)
+        paths.push({ coords: entry.planned, color, planned: true, preview });
+      return paths;
+    },
+    [allRoutes]
+  );
 
-  // Faint fleet routes underneath; the selected vessel's brighter, detailed
-  // route (with its destination leg) drawn on top.
+  // Clicked vessel: full-strength route. Hovered vessel: a faint preview, so
+  // you can skim routes without committing to a card. On touch screens there
+  // is no hover, so a tap (= select) is the only way in — same result.
+  const selectedPaths = useMemo(
+    () => legsFor(selected, false),
+    [legsFor, selected]
+  );
+  const hoveredId = hovered ? hovered.id : null;
+  const hoverPaths = useMemo(
+    () =>
+      hovered && (!selected || hovered.id !== selected.id)
+        ? legsFor(hovered, true)
+        : [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [legsFor, hoveredId, selected]
+  );
+
+  // Preview underneath; the selected vessel's route drawn on top.
   const allPaths = useMemo(
-    () => [...fleetRoutes, ...routePaths],
-    [fleetRoutes, routePaths]
+    () => [...hoverPaths, ...selectedPaths],
+    [hoverPaths, selectedPaths]
   );
 
   return (
