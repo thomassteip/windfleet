@@ -328,6 +328,7 @@ function routesFeatureCollection(paths) {
           properties: {
             color: p.color,
             preview: !!p.preview,
+            inferred: !!p.inferred,
             planned: !!p.planned,
           },
           geometry:
@@ -429,7 +430,11 @@ function GlobeView({
           "line-color": ["get", "color"],
           "line-width": ["case", ["get", "preview"], 3, 7],
           "line-blur": ["case", ["get", "preview"], 2.5, 5],
-          "line-opacity": ["case", ["get", "preview"], 0.3, 0.45],
+          "line-opacity": [
+            "*",
+            ["case", ["get", "preview"], 0.3, 0.45],
+            ["case", ["get", "inferred"], 0.5, 1],
+          ],
         },
       });
     }
@@ -444,11 +449,13 @@ function GlobeView({
         paint: {
           "line-color": ["get", "color"],
           "line-width": 1.7,
-          "line-opacity": 0.75,
+          "line-opacity": ["case", ["get", "inferred"], 0.35, 0.75],
         },
       });
     }
-    // Selected vessel, where it has been: thick and solid.
+    // Selected vessel, where it has been: thick and solid. Stretches where the
+    // AIS receivers lost the ship (gaps filled by searoute) are fainter, so
+    // the observed track and the inferred one never look the same.
     if (!map.getLayer("routes-travelled")) {
       map.addLayer({
         id: "routes-travelled",
@@ -459,7 +466,7 @@ function GlobeView({
         paint: {
           "line-color": ["get", "color"],
           "line-width": 3.2,
-          "line-opacity": 1,
+          "line-opacity": ["case", ["get", "inferred"], 0.4, 1],
         },
       });
     }

@@ -85,8 +85,9 @@ positions → Run workflow), or locally:
 python3 scripts/build_routes.py       # -> public/routes.json, keyed to the NEW ids
 ```
 
-To check: the last point of a vessel's `travelled` leg should sit on its current
-lat/lng — that's how the corruption was caught, and it's cheap to re-verify.
+To check: the last point of a vessel's `travelled` leg (the last point of its last
+piece) should sit on its current lat/lng — that's how the corruption was caught, and
+it's cheap to re-verify.
 
 Pushing to `main` deploys the front end to Vercel but does **nothing** to the database.
 Supabase is updated only by running the SQL by hand. Forgetting this step is the single
@@ -172,6 +173,16 @@ dot. They still count in every total — that's intended, not a bug.
 
 ## Gotchas
 
+- **Voyage lines: the travelled leg is the real AIS track, not a guess** (since Oct
+  2026). `build_routes.py` pulls each ship's Open Waters track since its previous port
+  stop (max 30 days; Open Waters keeps only ~6 weeks), fills receiver gaps over 100 km
+  with `searoute` and flags them `inferred` (drawn fainter). Before that it was a
+  searoute guess from the `last_port` column, which goes stale whenever the 48 h port
+  detection misses a call: every travelled line over 5,000 km was invented that way.
+  Don't go back to it. Mid-ocean coverage is thin, so most of the *distance* is
+  inferred; that's honest. Gap fills have no detour limit (Chile → River Plate is 3.3×
+  the straight line, via Cape Horn); the planned leg does (3×), and is skipped for
+  positions older than 14 days. Routes show only for the hovered/selected ship.
 - The globe's rendered land/coastlines come from the CARTO vector-tile basemaps, not
   from GeoJSON polygons — that's what keeps them crisp at any zoom with no freeze.
   `world-atlas/land-110m.json` in `GlobeView` is a separate, invisible thing: a coarse

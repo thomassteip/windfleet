@@ -41,10 +41,13 @@ jobs:
 
       # Voyage lines are precomputed, so they must be rebuilt whenever the
       # positions move — otherwise each line ends where the ship used to be.
+      # The travelled leg is each ship's real AIS track, also from Open Waters;
+      # this step fails (and nothing is committed) if under half come back.
       - name: Rebuild voyage routes from the live fleet
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          OPENWATERS_TOKEN: ${{ secrets.OPENWATERS_TOKEN }}
         run: python scripts/build_routes.py
 
       - name: Commit routes if they changed

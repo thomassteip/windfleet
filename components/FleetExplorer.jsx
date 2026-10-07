@@ -237,8 +237,13 @@ export default function FleetExplorer() {
       if (!entry) return [];
       const color = techColor(v.technology);
       const paths = [];
-      if (entry.travelled)
-        paths.push({ coords: entry.travelled, color, planned: false, preview });
+      // travelled is a list of pieces, {c, inferred}: inferred = a receiver gap
+      // filled by searoute, drawn fainter than the observed track. (Pre-Oct-2026
+      // files held one bare coordinate list; still accepted.)
+      const t = entry.travelled;
+      const pieces = !t ? [] : typeof t[0]?.[0] === "number" ? [{ c: t }] : t;
+      for (const p of pieces)
+        paths.push({ coords: p.c, color, planned: false, inferred: !!p.inferred, preview });
       if (entry.planned)
         paths.push({ coords: entry.planned, color, planned: true, preview });
       return paths;
