@@ -3,7 +3,7 @@ import AnalyticsDashboard from "@/components/analytics/AnalyticsDashboard";
 export const metadata = {
   title: "WindFleet — Fleet Analytics",
   description:
-    "Analytics on the global wind-assisted propulsion fleet: installations by year, technology mix, retrofit vs newbuild, and the OEM landscape.",
+    "Analytics on the global wind-assisted propulsion fleet: installations by year, technology mix, retrofit vs newbuild, and the makers behind the systems.",
 };
 
 export default function AnalyticsPage() {

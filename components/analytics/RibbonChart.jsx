@@ -3,9 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { niceTicks } from "@/lib/chart";
 
-// Stacked ordered area / ribbon chart. Columns per year, segments ranked
-// (largest on top) and connected across years by ribbons. Absolute values,
-// so column height also reflects the annual total.
+// Stacked ordered area / ribbon chart. Columns per year, connected across
+// years by ribbons. Absolute values, so column height also reflects the total.
+//
+// ranked (default): each year's segments re-sort, largest on top, so the
+// ribbons cross as categories overtake each other. That's the point for annual
+// installs ("who's rising"). For a running total it's just noise, so the
+// cumulative chart passes ranked={false}: a fixed stack, first category at the
+// baseline, ribbons that never cross.
 //
 // Drawn at the container's real pixel width (measured), not scaled from a
 // fixed canvas: in the ~330px side panel a scaled 820px drawing shrank its
@@ -18,6 +23,7 @@ export default function RibbonChart({
   highlight = null,
   onPick = () => {},
   partialYear = null,
+  ranked = true,
 }) {
   const [hover, setHover] = useState(null);
   const boxRef = useRef(null);
@@ -58,15 +64,14 @@ export default function RibbonChart({
   const labelEvery = slot < 20 ? 2 : 1;
   const showYear = (i) => (n - 1 - i) % labelEvery === 0;
 
-  // Per year: ranked segments (largest on top) with y bounds.
+  // Per year: segments top-down with y bounds — ranked (largest on top), or in
+  // reverse category order so the first category sits on the baseline.
   const layout = data.map((d, i) => {
-    const ranked = cats
-      .map((c) => ({ cat: c, value: d[c] || 0 }))
-      .filter((s) => s.value > 0)
-      .sort((a, b) => b.value - a.value);
+    const present = cats.map((c) => ({ cat: c, value: d[c] || 0 })).filter((s) => s.value > 0);
+    const order = ranked ? present.sort((a, b) => b.value - a.value) : present.reverse();
     let y = baseline - totals[i] * scale; // top of column
     const segs = {};
-    ranked.forEach((s) => {
+    order.forEach((s) => {
       const h = s.value * scale;
       segs[s.cat] = { y0: y, y1: y + h, value: s.value };
       y += h;

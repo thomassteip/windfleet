@@ -7,10 +7,7 @@ import {
   ResponsiveContainer,
   BarChart,
   Bar,
-  PieChart,
-  Pie,
   Cell,
-  Treemap,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -124,6 +121,111 @@ function LegendChips({ items, colorFn, hl, onPick }) {
   );
 }
 
+const pct = (x) => `${Math.round(x * 100)}%`;
+const fmtShareValue = (metric, v) =>
+  metric === "dwt"
+    ? `${Math.round(v / 1000).toLocaleString("en-GB")} kt`
+    : `${v} ${metric === "vessels" ? (v === 1 ? "vessel" : "vessels") : v === 1 ? "device" : "devices"}`;
+
+// Technology share as 100% bars, one per weighting (vessels, devices, DWT).
+// Replaced a vessels-only donut that repeated the market-size chart and could
+// only be read by hovering. Plain HTML so every segment is a real button.
+function ShareBars({ rows, hl, onPick, fade }) {
+  const [hover, setHover] = useState(null);
+  const dwt = rows.find((r) => r.metric === "dwt");
+  return (
+    <div>
+      <div className="space-y-3">
+        {rows.map((r) => (
+          <div key={r.metric} className="flex items-center gap-3">
+            <span className="w-20 shrink-0 text-[11px] text-muted">{r.label}</span>
+            {/* 2px gaps between segments, rounded outer ends */}
+            <div className="flex h-7 min-w-0 flex-1 gap-[2px] overflow-hidden rounded">
+              {r.parts.map((p) => (
+                <button
+                  key={p.tech}
+                  onClick={() => onPick(p.tech)}
+                  onMouseEnter={() => setHover({ ...p, metric: r.metric })}
+                  onMouseLeave={() => setHover(null)}
+                  title={`${p.tech}: ${fmtShareValue(r.metric, p.value)} (${pct(p.share)})`}
+                  className="flex min-w-[3px] items-center justify-center overflow-hidden font-mono text-[11px] text-[#10202e] transition-opacity"
+                  style={{ width: `${p.share * 100}%`, background: techColor(p.tech), opacity: fade(p.tech) }}
+                >
+                  {p.share >= 0.1 ? pct(p.share) : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* hover readout, in text ink rather than the series colour */}
+      <p className="mt-3 min-h-[1rem] font-mono text-[11px] leading-4 text-muted">
+        {hover ? (
+          <>
+            <span className="text-fg">{hover.tech}</span> · {fmtShareValue(hover.metric, hover.value)} ·{" "}
+            <span className="text-fg">{pct(hover.share)}</span>
+          </>
+        ) : (
+          "Hover for numbers · click to spotlight"
+        )}
+      </p>
+      {dwt && dwt.missing > 0 && (
+        <p className="mt-1 text-[11px] text-muted/80">
+          Deadweight leaves out {dwt.missing} vessel{dwt.missing === 1 ? "" : "s"} with no DWT on record.
+        </p>
+      )}
+    </div>
+  );
+}
+
+const MAKER_ROWS = 10;
+
+// Every maker, ranked by vessels with its system, as a bar list. Replaced a
+// treemap where half the makers were tiles too small to label. Each name
+// opens that maker's profile.
+function MakerRanking({ makers, noMaker, hl, onOpen }) {
+  const [all, setAll] = useState(false);
+  const max = Math.max(1, ...makers.map((m) => m.count));
+  const shown = all ? makers : makers.slice(0, MAKER_ROWS);
+  const techHl = hl && TECH_ORDER.includes(hl) ? hl : null;
+  return (
+    <div>
+      <ul className="space-y-0.5">
+        {shown.map((m) => (
+          <li key={m.slug}>
+            <button
+              onClick={() => onOpen(m.slug)}
+              className="grid w-full grid-cols-[minmax(0,9rem)_minmax(4rem,1fr)_2rem] items-center gap-3 rounded-md px-1.5 py-1 text-left transition hover:bg-edge/40"
+              style={{ opacity: !techHl || m.techs.includes(techHl) ? 1 : FADE + 0.15 }}
+              title={`${m.name}: ${m.count} vessel${m.count === 1 ? "" : "s"} · ${m.techs.join(", ")}${m.country ? ` · ${m.country}` : ""}`}
+            >
+              <span className="truncate text-xs text-fg">{m.name}</span>
+              <span className="h-3 overflow-hidden rounded-sm">
+                <span
+                  className="block h-full rounded-r-sm"
+                  style={{ width: `${(m.count / max) * 100}%`, background: techColor(m.techs[0]) }}
+                />
+              </span>
+              <span className="text-right font-mono text-xs tabular-nums text-fg">{m.count}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
+        <span>
+          Bar colour = the maker's main technology
+          {noMaker > 0 && ` · ${noMaker} vessel${noMaker === 1 ? " has" : "s have"} no maker listed`}
+        </span>
+        {makers.length > MAKER_ROWS && (
+          <button onClick={() => setAll((a) => !a)} className="text-accent hover:underline">
+            {all ? "Show top 10" : `Show all ${makers.length}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const KPI = ({ value, label, highlight }) => (
   <div className="rounded-xl border border-edge/50 bg-panel/50 px-4 py-3">
     <div
@@ -197,9 +299,9 @@ export default function AnalyticsDashboard({
     CUMULATIVE,
     INSTALLS_BY_TECH,
     LAST_YEAR,
-    TECH_MIX,
+    TECH_SHARE,
     TECH_INSTALL,
-    OEM_TREEMAP,
+    MAKERS,
     marketSize,
   } = A;
 
@@ -222,44 +324,6 @@ export default function AnalyticsDashboard({
   const pickCum = (name) => toggleHl(name, dim);
   // Opacity for a series/category: fade only within charts that contain hl.
   const op = (name, cats) => (!hl || !cats.includes(hl) ? 1 : name === hl ? 1 : FADE);
-
-  const renderTile = (props) => {
-    const { x, y, width, height, name, slug, tech, size } = props;
-    // Recharts also calls this for the treemap's root node, which has no name.
-    if (width <= 0 || height <= 0 || name == null) return null;
-    // slug: a maker's page; null = the single-ship catch-all (opens the list of
-    // makers); false = vessels with no maker, which has nowhere to go.
-    const clickable = slug !== false;
-    const fill = tech === "Other" || tech === "None" ? POP.grey : techColor(tech);
-    const o = !hl || !TECH_ORDER.includes(hl) ? 1 : tech === hl ? 1 : FADE;
-    // "No maker" is drawn faint (it isn't a company), so its text switches to
-    // the theme's ink to stay readable on the see-through tile.
-    const none = tech === "None";
-    const ink = none ? (theme === "dark" ? "#c9d2e0" : "#10202e") : "#10202e";
-    const showLabel = width > 54 && height > 26;
-    // Clip the name to the tile instead of letting it run under the next one.
-    const room = Math.floor((width - 14) / 6.6);
-    const label = name.length > room ? `${name.slice(0, Math.max(1, room - 1))}…` : name;
-    return (
-      <g style={{ cursor: clickable ? "pointer" : "default" }} onClick={clickable ? () => openMaker(slug) : undefined}>
-        {/* native hover tooltip, so the small unlabelled tiles still say who they are */}
-        <title>{`${name}: ${size} vessel${size === 1 ? "" : "s"}`}</title>
-        <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={o * (none ? 0.25 : 1)}
-          stroke={theme === "dark" ? "#0a111b" : "#ffffff"} strokeWidth={2} rx={3} />
-        {showLabel && (
-          <>
-            <text x={x + 8} y={y + 18} fill={ink} fillOpacity={o} fontSize={12} fontWeight={500}>
-              {label}
-            </text>
-            <text x={x + 8} y={y + 33} fill={ink} fillOpacity={o * 0.7} fontSize={11}
-              fontFamily="IBM Plex Mono, monospace">
-              {size}
-            </text>
-          </>
-        )}
-      </g>
-    );
-  };
 
   return (
     <div className="h-full w-full overflow-y-auto bg-ink scroll-thin">
@@ -338,8 +402,8 @@ export default function AnalyticsDashboard({
           <KPI value={KPIS.yoy != null ? `${KPIS.yoy > 0 ? "+" : ""}${KPIS.yoy}%` : "—"} label={`yoy ${KPIS.yoyLabel}`} highlight />
           <KPI value={KPIS.devices} label="wind devices" />
           <KPI value={`${KPIS.retrofitPct}%`} label="retrofit" />
-          <KPI value={KPIS.oems} label="OEMs" />
-          <KPI value={KPIS.countries} label="OEM countries" />
+          <KPI value={KPIS.makers} label="makers" />
+          <KPI value={KPIS.countries} label="maker countries" />
         </div>
 
         {/* Hero cumulative area */}
@@ -372,9 +436,10 @@ export default function AnalyticsDashboard({
             highlight={hl}
             onPick={pickCum}
             partialYear={LAST_YEAR}
+            ranked={false}
           />
           <p className="mt-2 text-[11px] text-muted">
-            Cumulative fleet in service; column height is the running total. {LAST_YEAR} has a dotted outline — it is year-to-date and will keep growing.
+            Cumulative fleet in service; column height is the running total, bands stack in legend order from the bottom. {LAST_YEAR} has a dotted outline — it is year-to-date and will keep growing.
           </p>
         </Card>
 
@@ -395,41 +460,11 @@ export default function AnalyticsDashboard({
           </p>
         </Card>
 
-        {/* Donut + tech split */}
+        {/* Technology share + tech split */}
         <div className={`mb-6 grid gap-6 ${compact ? "grid-cols-1" : "grid-cols-1 lg:grid-cols-2"}`}>
-          <Card title="Technology mix · vessels">
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie
-                  data={TECH_MIX}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={58}
-                  outerRadius={92}
-                  paddingAngle={2}
-                  stroke="transparent"
-                  onClick={(d) => toggleHl(d.name)}
-                >
-                  {TECH_MIX.map((d) => (
-                    <Cell
-                      key={d.name}
-                      fill={techColor(d.name)}
-                      fillOpacity={op(d.name, TECH_ORDER)}
-                      style={{ cursor: "pointer" }}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip content={<Tip />} />
-                <Legend
-                  iconType="square"
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                  wrapperStyle={{ fontSize: 11, cursor: "pointer" }}
-                  onClick={(e) => toggleHl(e.value)}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+          <Card title="Technology share">
+            <LegendChips items={TECH_ORDER.filter((t) => TECH_SHARE[0].parts.some((p) => p.tech === t))} colorFn={techColor} hl={hl} onPick={toggleHl} />
+            <ShareBars rows={TECH_SHARE} hl={hl} onPick={toggleHl} fade={(t) => op(t, TECH_ORDER)} />
           </Card>
 
           <Card title="Technology × retrofit / newbuild">
@@ -491,11 +526,9 @@ export default function AnalyticsDashboard({
           </Card>
         </div>
 
-        {/* OEM treemap */}
-        <Card title="OEM landscape · tile area = installations, colour = technology · click a maker for its profile" className="mb-10">
-          <ResponsiveContainer width="100%" height={260}>
-            <Treemap data={OEM_TREEMAP} dataKey="size" aspectRatio={3} content={renderTile} isAnimationActive={false} />
-          </ResponsiveContainer>
+        {/* Makers, ranked */}
+        <Card title="Makers · vessels with their system · click a maker for its profile" className="mb-10">
+          <MakerRanking makers={MAKERS} noMaker={KPIS.noMaker} hl={hl} onOpen={openMaker} />
         </Card>
       </div>
     </div>

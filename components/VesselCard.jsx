@@ -143,7 +143,7 @@ export default function VesselCard({ vessel, onClose, onOpenMaker }) {
 
       <div className="mt-3">
         <Row
-          label="OEM"
+          label="Maker"
           value={
             hasMaker(vessel.oem) ? (
               onOpenMaker ? (
