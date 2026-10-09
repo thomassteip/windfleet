@@ -7,6 +7,8 @@ import { techColor, SHIP_COLORS, INSTALL_COLORS } from "@/lib/theme";
 import { SHIP_ORDER, INSTALL_ORDER } from "@/lib/analytics";
 import { niceTicks } from "@/lib/chart";
 import ChartTip from "./analytics/ChartTip";
+import PanelBar, { PANEL_BACK } from "./PanelBar";
+import { makerSites } from "@/lib/makers";
 
 // Right-hand panel inside FleetExplorer for the WAPS makers: an index of every
 // maker, or one maker's profile. All figures come from buildAnalytics(fleet)'s
@@ -165,6 +167,7 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
   const color = techColor(maker.techs[0]);
   const list = showAll ? maker.vessels : maker.vessels.slice(0, LIST_PREVIEW);
   const noFix = maker.vessels.filter((v) => v.lat == null).length;
+  const sites = makerSites(maker.slug);
 
   return (
     <>
@@ -181,6 +184,25 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
             ))}
             {maker.country && <span>· {maker.country}</span>}
           </p>
+          {/* Website(s), hand-curated in lib/makers.js; none shown if unknown. */}
+          {sites.length > 0 && (
+            <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
+              {sites.map((s) => (
+                <a
+                  key={s.url}
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-accent underline decoration-dotted underline-offset-2 transition hover:text-fg"
+                >
+                  {s.label}
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M7 17L17 7M9 7h8v8" />
+                  </svg>
+                </a>
+              ))}
+            </p>
+          )}
         </div>
       </div>
 
@@ -304,24 +326,17 @@ export default function MakerPanel({
   return (
     <div ref={scrollRef} className="scroll-thin h-full w-full overflow-y-auto bg-ink">
       <div className="px-4 py-5">
-        <div className="mb-5 flex items-center justify-between">
-          {/* The header's tabs stay visible above this panel (theme toggle
-              included), so the panel itself only needs a way back and out. */}
-          {slug === "index" ? (
-            <span />
-          ) : (
-            <button onClick={() => onOpen("index")} className="font-mono text-xs text-muted transition hover:text-fg">
-              ← all makers
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            aria-label="Close maker panel"
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-edge/70 text-muted transition hover:border-accent hover:text-fg"
-          >
-            ✕
-          </button>
-        </div>
+        <PanelBar
+          back={
+            slug !== "index" && (
+              <button onClick={() => onOpen("index")} className={PANEL_BACK}>
+                ← all makers
+              </button>
+            )
+          }
+          onClose={onClose}
+          closeLabel="Close makers"
+        />
 
         {slug === "index" ? (
           <MakerIndex makers={makers} onOpen={onOpen} />

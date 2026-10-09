@@ -27,6 +27,7 @@ import { buildAnalytics, FALLBACK_ANALYTICS, INSTALL_ORDER } from "@/lib/analyti
 import { fetchVessels } from "@/lib/data";
 import { useTheme } from "@/components/ThemeProvider";
 import ThemeToggle from "@/components/ThemeToggle";
+import PanelBar, { PANEL_BACK, PANEL_ICON_BTN } from "@/components/PanelBar";
 
 const FADE = 0.16;
 
@@ -269,57 +270,49 @@ export default function AnalyticsDashboard({
   return (
     <div className="h-full w-full overflow-y-auto bg-ink scroll-thin">
       <div className={compact ? "px-4 py-5" : "mx-auto max-w-6xl px-6 py-8"}>
-        {/* Header */}
-        <div className="mb-6 flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            {onClose ? (
-              <button onClick={onClose} className="font-mono text-xs text-muted transition hover:text-fg">
-                ← back to globe
-              </button>
-            ) : (
-              <Link href="/" className="font-mono text-xs text-muted transition hover:text-fg">
+        {/* Same top bar as every side panel: actions and ✕ on the right. The
+            standalone /analytics page has no globe to close back to, so it gets
+            a link home and its own theme toggle instead. */}
+        <PanelBar
+          back={
+            !onClose && (
+              <Link href="/" className={PANEL_BACK}>
                 ← windfleet
               </Link>
-            )}
-            <h1 className={`mt-2 font-mono font-medium lowercase tracking-tight text-fg ${compact ? "text-xl" : "text-2xl"}`}>
-              fleet analytics
-            </h1>
-            {!compact && (
-              <p className="mt-1 text-sm text-muted">
-                The global wind-assisted propulsion fleet, in numbers
-              </p>
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {/* Expand to full screen / collapse back to quarter width */}
-            {compact && onExpand && (
-              <button
-                onClick={onExpand}
-                aria-label="Expand analytics to full screen"
-                title="Expand to full screen"
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-edge/70 text-muted transition hover:border-accent hover:text-fg"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                </svg>
-              </button>
-            )}
-            {!compact && onCollapse && (
-              <button
-                onClick={onCollapse}
-                aria-label="Collapse analytics to side panel"
-                title="Collapse to side panel"
-                className="flex h-7 w-7 items-center justify-center rounded-md border border-edge/70 text-muted transition hover:border-accent hover:text-fg"
-              >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 3H3v6M21 15v6h-6M3 3l7 7M21 21l-7-7" />
-                </svg>
-              </button>
-            )}
-            {/* Inside the explorer the header's toggle stays visible above
-                this panel; only the standalone /analytics page needs its own. */}
-            {!onClose && <ThemeToggle />}
-          </div>
+            )
+          }
+          onClose={onClose}
+          closeLabel="Close analytics"
+          actions={
+            <>
+              {/* Expand to full width / collapse back to the side panel */}
+              {compact && onExpand && (
+                <button onClick={onExpand} aria-label="Expand analytics to full screen" title="Expand to full width" className={PANEL_ICON_BTN}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                  </svg>
+                </button>
+              )}
+              {!compact && onCollapse && (
+                <button onClick={onCollapse} aria-label="Collapse analytics to side panel" title="Back to side panel" className={PANEL_ICON_BTN}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M9 3H3v6M21 15v6h-6M3 3l7 7M21 21l-7-7" />
+                  </svg>
+                </button>
+              )}
+              {!onClose && <ThemeToggle />}
+            </>
+          }
+        />
+        <div className="mb-6">
+          <h1 className={`font-mono font-medium lowercase tracking-tight text-fg ${compact ? "text-xl" : "text-2xl"}`}>
+            fleet analytics
+          </h1>
+          {!compact && (
+            <p className="mt-1 text-sm text-muted">
+              The global wind-assisted propulsion fleet, in numbers
+            </p>
+          )}
         </div>
 
         {hl && (
