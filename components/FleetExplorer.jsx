@@ -73,13 +73,14 @@ function WindVariantSwitch({ value, onChange }) {
   );
 }
 
-// Open/close buttons for the two side panels, in the top-right toolbar next to
-// the theme toggle, directly above where the panels open. Same size and style
-// as the theme toggle so the row reads as one toolbar. History: a right-edge
-// "Analytics" pull tab plus a small "makers" box (two unrelated entry points),
-// then Globe/Analytics/Makers tabs beside the wordmark (the globe isn't a
-// view you switch to, and the tabs pushed the search off centre). Oct 2026.
-const PANELS = [
+// Side rail: the app's sections as a fixed strip down the right edge, each
+// opening its panel just to the rail's left. Built to grow: Forecast and
+// Performance are planned and shown here greyed out ("soon"). Theme and
+// sources live at the bottom of the rail. On phones the same items become a
+// bottom tab bar.
+// The rail is 72px wide: the w-[72px] / right-[72px] / 72px values below all
+// refer to it, so change them together.
+const SECTIONS = [
   {
     key: "analytics",
     label: "Analytics",
@@ -91,35 +92,73 @@ const PANELS = [
     // a factory outline: the companies that build the wind systems
     icon: <path d="M3 21V10l5 3v-3l5 3v-3l5 3V4h3v17zM3 21h18" />,
   },
+  {
+    key: "forecast",
+    label: "Forecast",
+    soon: true,
+    icon: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
+  },
+  {
+    key: "performance",
+    label: "Performance",
+    soon: true,
+    // a gauge
+    icon: <path d="M4.5 18a8.5 8.5 0 1 1 15 0M12 14l4-4.5" />,
+  },
 ];
 
-function PanelButtons({ open, onToggle, labels = true, className = "" }) {
+function SectionButton({ s, on, onToggle, compact }) {
   return (
-    <div className={`pointer-events-auto flex items-center gap-2 ${className}`}>
-      {PANELS.map(({ key, label, icon }) => {
-        const on = open === key;
-        return (
-          <button
-            key={key}
-            onClick={() => onToggle(key)}
-            aria-pressed={on}
-            aria-label={on ? `Close ${label.toLowerCase()}` : label}
-            title={on ? `Close ${label.toLowerCase()}` : label}
-            className={`flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs backdrop-blur-md transition ${
-              on
-                ? "border-accent bg-accent/15 text-fg"
-                : "border-edge/60 bg-panel/70 text-muted hover:border-accent hover:text-fg"
-            }`}
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              {icon}
-            </svg>
-            {/* Labels only where the toolbar has room beside the centred search. */}
-            {labels && <span className="hidden pr-0.5 lg:inline">{label}</span>}
-          </button>
-        );
-      })}
-    </div>
+    <button
+      onClick={() => !s.soon && onToggle(s.key)}
+      disabled={s.soon}
+      aria-pressed={s.soon ? undefined : on}
+      title={s.soon ? `${s.label}: coming soon` : on ? `Close ${s.label.toLowerCase()}` : s.label}
+      className={`flex flex-col items-center justify-center gap-1 rounded-xl border transition ${
+        compact ? "h-12 flex-1" : "h-14 w-14"
+      } ${
+        s.soon
+          ? "cursor-default border-transparent text-muted/40"
+          : on
+          ? "border-accent/70 bg-accent/15 text-fg"
+          : "border-transparent text-muted hover:bg-edge/40 hover:text-fg"
+      }`}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        {s.icon}
+      </svg>
+      <span className="text-[10px] leading-none">{s.label}</span>
+    </button>
+  );
+}
+
+function SideRail({ open, onToggle }) {
+  return (
+    <aside
+      aria-label="Sections"
+      className="absolute bottom-0 right-0 top-0 z-[46] hidden w-[72px] flex-col items-center gap-1.5 border-l border-edge/60 bg-panel/70 py-6 backdrop-blur-md md:flex"
+    >
+      {SECTIONS.map((s) => (
+        <SectionButton key={s.key} s={s} on={open === s.key} onToggle={onToggle} />
+      ))}
+      <div className="mt-auto flex flex-col items-center gap-3">
+        <ThemeToggle />
+        <InfoButton className="relative" popClass="absolute bottom-0 right-full mr-3" />
+      </div>
+    </aside>
+  );
+}
+
+function MobileTabBar({ open, onToggle }) {
+  return (
+    <nav
+      aria-label="Sections"
+      className="fixed inset-x-0 bottom-0 z-[46] flex gap-1 border-t border-edge/60 bg-panel/90 px-2 pb-2 pt-1.5 backdrop-blur-md md:hidden"
+    >
+      {SECTIONS.map((s) => (
+        <SectionButton key={s.key} s={s} on={open === s.key} onToggle={onToggle} compact />
+      ))}
+    </nav>
   );
 }
 
@@ -469,7 +508,9 @@ export default function FleetExplorer({ initialMaker = null }) {
           mode it shrinks to the left so the analytics panel sits beside it. */}
       <div
         className={`absolute inset-y-0 left-0 z-0 transition-[right] duration-500 ease-in-out ${
-          analyticsMode === "quarter" || makerOpen ? "right-0 md:right-[max(25%,360px)]" : "right-0"
+          analyticsMode === "quarter" || makerOpen
+            ? "right-0 md:right-[calc(72px_+_max(25%,360px))]"
+            : "right-0 md:right-[72px]"
         }`}
       >
         <GlobeView
@@ -489,7 +530,7 @@ export default function FleetExplorer({ initialMaker = null }) {
       {/* Header: wordmark left, search dead centre, toolbar right (panel
           buttons, theme, count). Sits above the panels (z-45 vs 40) so search
           results can drop over them. */}
-      <header className="pointer-events-none absolute left-0 top-0 z-[45] w-full p-4 sm:p-6">
+      <header className="pointer-events-none absolute left-0 right-0 top-0 z-[45] p-4 sm:p-6 md:right-[72px]">
         <div ref={headerRef}>
           <div className="flex items-start justify-between gap-3">
             <div className="pointer-events-auto">
@@ -502,8 +543,10 @@ export default function FleetExplorer({ initialMaker = null }) {
               </p>
             </div>
             <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
-              <PanelButtons open={openPanel} onToggle={togglePanel} className="hidden md:flex" />
-              <ThemeToggle />
+              {/* on desktop the theme toggle sits at the bottom of the rail */}
+              <div className="md:hidden">
+                <ThemeToggle />
+              </div>
               <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
                 <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
                   {String((makerVessels || filtered).length).padStart(2, "0")}
@@ -514,16 +557,12 @@ export default function FleetExplorer({ initialMaker = null }) {
               </div>
             </div>
           </div>
-          {/* Phones: search and the panel buttons share a row under the
-              wordmark. */}
-          <div className="mt-3 flex items-center gap-2 md:hidden">
-            <div className="pointer-events-auto min-w-0 flex-1">
-              <VesselSearch vessels={vessels} onPick={handleSearchPick} />
-            </div>
-            <PanelButtons open={openPanel} onToggle={togglePanel} labels={false} />
+          {/* Phones: search on its own row under the wordmark. */}
+          <div className="pointer-events-auto mt-3 md:hidden">
+            <VesselSearch vessels={vessels} onPick={handleSearchPick} />
           </div>
         </div>
-        {/* Desktop: search centred on the screen, whatever else is open. */}
+        {/* Desktop: search centred over the map (the header stops at the rail). */}
         <div className="pointer-events-auto absolute left-1/2 top-6 hidden w-64 -translate-x-1/2 md:block xl:w-80">
           <VesselSearch vessels={vessels} onPick={handleSearchPick} />
         </div>
@@ -544,7 +583,7 @@ export default function FleetExplorer({ initialMaker = null }) {
       <div
         className={`z-30 flex flex-col gap-3 transition-all duration-300 ${
           isMobile
-            ? `scroll-thin fixed inset-x-3 bottom-3 max-h-[78vh] overflow-y-auto ${
+            ? `scroll-thin fixed inset-x-3 bottom-[76px] max-h-[70vh] overflow-y-auto ${
                 filtersOpen && !panelOpen
                   ? "pointer-events-auto translate-y-0 opacity-100"
                   : "pointer-events-none translate-y-[115%] opacity-0"
@@ -620,7 +659,7 @@ export default function FleetExplorer({ initialMaker = null }) {
         className={`transition-all duration-500 ease-in-out ${
           isMobile
             ? "fixed inset-x-3 bottom-3 z-50"
-            : `absolute top-24 z-20 ${panelOpen ? "left-6" : "right-6"}`
+            : `absolute top-24 z-20 ${panelOpen ? "left-6" : "right-[96px]"}`
         }`}
       >
         <VesselCard
@@ -673,14 +712,14 @@ export default function FleetExplorer({ initialMaker = null }) {
 
       {/* One "i" for all credits + feedback (replaces MapLibre's own "i" and
           the old centre-bottom footer line). */}
-      <InfoButton />
+      <InfoButton className="absolute bottom-[80px] right-3 z-20 md:hidden" />
 
       {/* Mobile-only Filters button — opens the slide-up sheet. */}
       {isMobile && !filtersOpen && !panelOpen && !selected && (
         <button
           onClick={() => setFiltersOpen(true)}
           aria-label="Open filters and layers"
-          className="pointer-events-auto fixed bottom-4 left-4 z-30 flex items-center gap-2 rounded-full border border-edge/60 bg-panel/90 px-4 py-2.5 text-xs font-medium text-fg shadow-xl backdrop-blur-md"
+          className="pointer-events-auto fixed bottom-[80px] left-4 z-30 flex items-center gap-2 rounded-full border border-edge/60 bg-panel/90 px-4 py-2.5 text-xs font-medium text-fg shadow-xl backdrop-blur-md"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M3 5h18M6 12h12M10 19h4" />
@@ -697,11 +736,11 @@ export default function FleetExplorer({ initialMaker = null }) {
       {/* Analytics panel — beside the globe, or full width; below the header */}
       <div
         style={{ top: panelTop }}
-        className={`absolute bottom-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
+        className={`absolute bottom-[64px] right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 md:bottom-0 md:right-[72px] backdrop-blur-md transition-all duration-500 ease-in-out ${
           analyticsMode === "full"
             ? "left-0"
             : "left-0 md:left-auto md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l"
-        } ${analyticsOpen ? "translate-x-0" : "translate-x-full"}`}
+        } ${analyticsOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"}`}
         aria-hidden={!analyticsOpen}
       >
         {analyticsOpen && (
@@ -719,8 +758,8 @@ export default function FleetExplorer({ initialMaker = null }) {
       {/* Maker panel — same slot and width as the analytics panel */}
       <div
         style={{ top: panelTop }}
-        className={`absolute bottom-0 left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:left-auto md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l ${
-          makerOpen ? "translate-x-0" : "translate-x-full"
+        className={`absolute bottom-[64px] left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:bottom-0 md:left-auto md:right-[72px] md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l ${
+          makerOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"
         }`}
         aria-hidden={!makerOpen}
       >
@@ -736,6 +775,8 @@ export default function FleetExplorer({ initialMaker = null }) {
           />
         )}
       </div>
+      <SideRail open={openPanel} onToggle={togglePanel} />
+      <MobileTabBar open={openPanel} onToggle={togglePanel} />
     </main>
   );
 }

@@ -27,7 +27,13 @@ const CREDITS = [
   { label: "Land mask", body: <>Natural Earth</> },
 ];
 
-export default function InfoButton() {
+// className positions the button (bottom-right corner by default); popClass
+// positions the popover (default: stacked above the button, in flow). The side
+// rail passes "relative" and opens the popover out to its left.
+export default function InfoButton({
+  className = "absolute bottom-3 right-3 z-20",
+  popClass = "",
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -47,12 +53,12 @@ export default function InfoButton() {
   }, [open]);
 
   return (
-    <div ref={ref} className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2">
+    <div ref={ref} className={`flex flex-col items-end gap-2 ${className}`}>
       {open && (
         <div
           role="dialog"
           aria-label="About this map"
-          className="w-72 rounded-xl border border-edge/60 bg-panel/95 p-4 text-xs shadow-xl backdrop-blur-md"
+          className={`w-72 rounded-xl border border-edge/60 bg-panel/95 p-4 text-xs shadow-xl backdrop-blur-md ${popClass}`}
         >
           <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted">Sources</p>
           <dl className="mt-2 space-y-1.5">
