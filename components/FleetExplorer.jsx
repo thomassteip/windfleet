@@ -6,6 +6,7 @@ import GlobeView from "./GlobeView";
 import FilterPanel from "./FilterPanel";
 import VesselCard from "./VesselCard";
 import ThemeToggle from "./ThemeToggle";
+import VesselSearch from "./VesselSearch";
 import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
@@ -195,6 +196,20 @@ export default function FleetExplorer() {
     return hit.length ? hit : filtered;
   }, [filtered, analyticsHl]);
 
+  // Search pick: select the vessel (card opens, globe flies there). If the
+  // current filters or a chart highlight would hide its dot, clear them first
+  // so the ship you asked for is actually visible on the globe.
+  const handleSearchPick = useCallback(
+    (v) => {
+      if (!globeVessels.some((g) => g.id === v.id)) {
+        setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
+        setAnalyticsHl(null);
+      }
+      setSelected(v);
+    },
+    [globeVessels]
+  );
+
   // Sea-routes are precomputed offline (scripts/build_routes.py →
   // public/routes.json) with the searoute engine, so a vessel's route draws
   // instantly from one static file — no live route API, nothing to restart.
@@ -308,7 +323,7 @@ export default function FleetExplorer() {
       </div>
 
       {/* Header */}
-      <header className="pointer-events-none absolute left-0 top-0 z-10 flex w-full items-start justify-between p-4 sm:p-6">
+      <header className="pointer-events-none absolute left-0 top-0 z-[35] flex w-full items-start justify-between gap-3 p-4 sm:p-6">
         <div className="pointer-events-auto">
           <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">
             wind<span className="text-muted">fleet</span>
@@ -316,6 +331,11 @@ export default function FleetExplorer() {
           <p className="mt-1 text-xs text-muted">
             Global wind-assisted propulsion · market intel
           </p>
+        </div>
+        {/* Centred on desktop; on phones it drops to its own row under the
+            wordmark row so it doesn't squeeze the count and theme toggle. */}
+        <div className="pointer-events-auto absolute inset-x-4 top-[92px] sm:inset-x-6 sm:top-[72px] md:inset-x-auto md:left-1/2 md:top-5 md:w-80 md:-translate-x-1/2 sm:md:top-6">
+          <VesselSearch vessels={vessels} onPick={handleSearchPick} />
         </div>
         <div className="pointer-events-auto flex items-center gap-3">
           <ThemeToggle />
