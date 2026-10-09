@@ -815,6 +815,13 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
             onOpen={openMaker}
             onClose={() => openMaker(null)}
             onSelectVessel={setSelected}
+            wide={isWide}
+            onExpand={() => setWide(true)}
+            onCollapse={() => setWide(false)}
+            onShowOnGlobe={(v) => {
+              setWide(false);
+              if (v) setSelected(v);
+            }}
           />
         )}
       </div>
