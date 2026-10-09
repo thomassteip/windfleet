@@ -7,6 +7,7 @@ import FilterPanel from "./FilterPanel";
 import VesselCard from "./VesselCard";
 import ThemeToggle from "./ThemeToggle";
 import VesselSearch from "./VesselSearch";
+import InfoButton from "./InfoButton";
 import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
@@ -488,22 +489,9 @@ export default function FleetExplorer() {
         </div>
       )}
 
-      {/* Footer — data attributions + feedback link. Slim and low-opacity so it
-          sits under the globe without competing with the UI. */}
-      <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 px-4 text-center">
-        <p className="text-[10px] leading-relaxed text-muted/60">
-          Routes © Eurostat SeaRoute · Land: Natural Earth
-          {" · "}
-          <a
-            href="https://www.linkedin.com/in/thomas-steip/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="pointer-events-auto underline decoration-dotted underline-offset-2 transition hover:text-fg"
-          >
-            Feedback &amp; corrections welcome
-          </a>
-        </p>
-      </div>
+      {/* One "i" for all credits + feedback (replaces MapLibre's own "i" and
+          the old centre-bottom footer line). */}
+      <InfoButton />
 
       {/* Mobile-only Filters button — opens the slide-up sheet. */}
       {isMobile && !filtersOpen && !analyticsOpen && !selected && (

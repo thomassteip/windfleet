@@ -738,6 +738,8 @@ function GlobeView({
         minZoom: 1.05,
         maxZoom: 15,
         dragRotate: false,
+        // Credits live in our own InfoButton (OSM/CARTO text included).
+        attributionControl: false,
       });
     } catch (e) {
       console.error("[GlobeView] map init failed:", e);
