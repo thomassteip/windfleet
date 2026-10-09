@@ -542,19 +542,10 @@ export default function FleetExplorer({ initialMaker = null }) {
                 Global wind-assisted propulsion · market intel
               </p>
             </div>
-            <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
-              {/* on desktop the theme toggle sits at the bottom of the rail */}
-              <div className="md:hidden">
-                <ThemeToggle />
-              </div>
-              <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
-                <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
-                  {String((makerVessels || filtered).length).padStart(2, "0")}
-                </div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
-                  vessels
-                </div>
-              </div>
+            {/* On desktop the theme toggle sits at the bottom of the rail, and
+                the vessel count lives in the Filters card. */}
+            <div className="pointer-events-auto md:hidden">
+              <ThemeToggle />
             </div>
           </div>
           {/* Phones: search on its own row under the wordmark. */}
@@ -615,6 +606,8 @@ export default function FleetExplorer({ initialMaker = null }) {
           filters={filters}
           setFilters={setFilters}
           counts={counts}
+          shown={filtered.length}
+          total={vessels.length}
         />
 
         {/* Wind layer (compact, under the filters) */}
@@ -725,10 +718,13 @@ export default function FleetExplorer({ initialMaker = null }) {
             <path d="M3 5h18M6 12h12M10 19h4" />
           </svg>
           Filters
-          {activeFilterCount > 0 && (
-            <span className="rounded-full bg-accent px-1.5 text-[10px] font-semibold text-ink">
-              {activeFilterCount}
+          {/* the vessel count, which on desktop heads the Filters card */}
+          {activeFilterCount > 0 ? (
+            <span className="rounded-full bg-accent px-1.5 font-mono text-[10px] font-semibold tabular-nums text-ink">
+              {filtered.length}/{vessels.length}
             </span>
+          ) : (
+            <span className="font-mono tabular-nums text-muted">{vessels.length}</span>
           )}
         </button>
       )}

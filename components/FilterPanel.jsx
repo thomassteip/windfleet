@@ -33,6 +33,8 @@ export default function FilterPanel({
   setFilters,
   yearRange,
   counts,
+  shown,
+  total,
 }) {
   const toggle = (key, value) => {
     setFilters((f) => {
@@ -54,18 +56,24 @@ export default function FilterPanel({
 
   return (
     <div className="scroll-thin pointer-events-auto flex min-h-0 w-full flex-col gap-5 overflow-y-auto rounded-2xl border border-edge/60 bg-panel/80 p-5 backdrop-blur-md md:w-72">
-      <div className="flex items-center justify-between">
+      {/* Title row carries the vessel count, next to the filters that change
+          it: "115 vessels", or "42 of 115 vessels" + Reset while filtering.
+          (It was a separate card in the top-right corner until Oct 2026.) */}
+      <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-widest text-muted">
           Filters
         </h2>
-        {activeCount > 0 && (
-          <button
-            onClick={reset}
-            className="text-[11px] text-accent hover:underline"
-          >
-            Reset ({activeCount})
-          </button>
-        )}
+        <div className="flex items-baseline gap-2 whitespace-nowrap text-[11px] text-muted">
+          <span aria-live="polite">
+            <span className="font-mono text-sm tabular-nums text-fg">{shown}</span>
+            {activeCount > 0 && <span className="font-mono tabular-nums"> of {total}</span>} vessels
+          </span>
+          {activeCount > 0 && (
+            <button onClick={reset} title={`Clear ${activeCount} filter${activeCount === 1 ? "" : "s"}`} className="text-accent hover:underline">
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       <Section title="WAPS technology">
