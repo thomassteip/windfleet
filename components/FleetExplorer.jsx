@@ -9,6 +9,7 @@ import ThemeToggle from "./ThemeToggle";
 import VesselSearch from "./VesselSearch";
 import InfoButton from "./InfoButton";
 import AnalyticsDashboard from "./analytics/AnalyticsDashboard";
+import DataTable from "./data/DataTable";
 import MakerPanel from "./MakerPanel";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
@@ -93,6 +94,12 @@ const SECTIONS = [
     icon: <path d="M3 21V10l5 3v-3l5 3v-3l5 3V4h3v17zM3 21h18" />,
   },
   {
+    key: "data",
+    label: "Data",
+    // a table
+    icon: <path d="M3 5h18v14H3zM3 10h18M3 14.5h18M9 5v14" />,
+  },
+  {
     key: "forecast",
     label: "Forecast",
     soon: true,
@@ -168,23 +175,27 @@ function MobileTabBar({ open, onToggle }) {
 //   "/analytics"        -> analytics
 //   "/makers"           -> the makers list
 //   "/makers/norsepower" -> one maker
+//   "/data", "/forecast" -> those panels
 // (Until Oct 2026 analytics had no address, so Back skipped past it and left
 // the site.)
+const SIMPLE_PANELS = ["analytics", "data", "forecast"];
+
 function viewFromPath(path) {
-  if (/^\/analytics\/?$/.test(path)) return { panel: "analytics", maker: null };
+  const simple = path.match(/^\/(analytics|data|forecast)\/?$/);
+  if (simple) return { panel: simple[1], maker: null };
   const m = path.match(/^\/makers(?:\/([^/]+))?\/?$/);
   if (m) return { panel: "makers", maker: m[1] || "index" };
   return { panel: null, maker: null };
 }
 
 function pathForView(panel, maker) {
-  if (panel === "analytics") return "/analytics";
+  if (SIMPLE_PANELS.includes(panel)) return `/${panel}`;
   if (panel === "makers") return maker && maker !== "index" ? `/makers/${maker}` : "/makers";
   return "/";
 }
 
-// initialMaker / initialPanel: set by the /makers and /analytics routes, so the
-// explorer opens with that panel already showing.
+// initialMaker / initialPanel: set by the /makers, /analytics, /data and
+// /forecast routes, so the explorer opens with that panel already showing.
 export default function FleetExplorer({ initialMaker = null, initialPanel = null }) {
   const { theme } = useTheme();
   const isMobile = useIsMobile();
@@ -201,8 +212,15 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   const [selected, setSelected] = useState(null);
   const [hovered, setHovered] = useState(null);
   const [pointer, setPointer] = useState({ x: 0, y: 0 });
-  // "closed" | "quarter" | "full"
-  const [analyticsMode, setAnalyticsMode] = useState(initialPanel === "analytics" ? "quarter" : "closed");
+  // Which panel is showing: null, "analytics", "makers", "data" or "forecast"
+  // (Performance is still a teaser). One value, so opening a panel always
+  // closes the other. `wide` = full width instead of beside the globe; the
+  // Data table is always full width.
+  const [panel, setPanel] = useState(initialMaker ? "makers" : initialPanel);
+  const [wide, setWide] = useState(false);
+  const isWide = panel === "data" || wide;
+  // Analytics' old three-way mode, still what AnalyticsDashboard expects.
+  const analyticsMode = panel === "analytics" ? (isWide ? "full" : "quarter") : "closed";
   const [analyticsHl, setAnalyticsHl] = useState(null);
   const [windOn, setWindOn] = useState(false);
   const [windVariant, setWindVariant] = useState("average"); // "live" | "average"
@@ -213,17 +231,17 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   // never reloads the globe; the address bar is kept in step by hand so every
   // maker view is still a shareable /makers/<slug> link.
   const [maker, setMaker] = useState(initialMaker);
-  const makerOpen = maker != null;
+  const makerOpen = panel === "makers";
+  const analyticsOpen = panel === "analytics";
+  const panelOpen = panel != null;
 
-  const analyticsOpen = analyticsMode !== "closed";
-  // Either right-hand panel (analytics or maker) takes the same slot.
-  const panelOpen = analyticsOpen || makerOpen;
   // Show a panel (or none) without touching the address; Back/Forward use this.
-  const applyView = useCallback(({ panel, maker: slug }) => {
-    setMaker(panel === "makers" ? slug || "index" : null);
-    // Analytics keeps its width (side or full) when it's already open.
-    setAnalyticsMode((m) => (panel === "analytics" ? (m === "closed" ? "quarter" : m) : "closed"));
-    if (panel !== "analytics") setAnalyticsHl(null);
+  // The width carries over when switching panels, and resets on close.
+  const applyView = useCallback(({ panel: next, maker: slug }) => {
+    setPanel(next);
+    setMaker(next === "makers" ? slug || "index" : null);
+    if (next !== "analytics") setAnalyticsHl(null);
+    if (next == null) setWide(false);
   }, []);
 
   // Show a panel and put its address in the history, once per change.
@@ -241,12 +259,12 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
 
   // Which panel is showing, for the toolbar buttons. Clicking a button opens
   // its panel; clicking it again closes it (as do the panel's ✕ and Esc).
-  const openPanel = makerOpen ? "makers" : analyticsOpen ? "analytics" : null;
+  const openPanel = panel;
   const closePanels = () => goTo(null);
   const togglePanel = (key) => {
     if (openPanel === key) closePanels();
-    else if (key === "analytics") openAnalytics();
-    else openMaker("index");
+    else if (key === "makers") openMaker("index");
+    else goTo(key);
   };
   const closePanelsRef = useRef(closePanels);
   closePanelsRef.current = closePanels;
@@ -266,7 +284,13 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   // left, so the search stays centred over the map; full-width analytics hides
   // the header altogether. On phones panels open below the header instead, so
   // its height is measured (it changes with the screen) rather than hard-coded.
-  const sidePanel = !isMobile && panelOpen && analyticsMode !== "full";
+  const sidePanel = !isMobile && panelOpen && !isWide;
+  // One slot for every panel: beside the rail at full window height on desktop
+  // (or full width), between the header and the tab bar on phones.
+  const panelClass = (open, full) =>
+    `absolute bottom-[64px] right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:bottom-0 md:right-[72px] md:border-t-0 ${
+      full ? "left-0" : "left-0 md:left-auto md:w-1/4 md:min-w-[360px] md:border-l"
+    } ${open ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"}`;
   const headerRight = isMobile ? 0 : sidePanel ? "calc(72px + max(25%, 360px))" : 72;
   const headerRef = useRef(null);
   const [panelTop, setPanelTop] = useState(80);
@@ -383,10 +407,9 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
       ? `${m.name} — WindFleet`
       : maker === "index"
       ? "WindFleet — WAPS makers"
-      : analyticsOpen
-      ? "WindFleet — Fleet Analytics"
-      : "WindFleet — The Global Wind-Assisted Propulsion Fleet";
-  }, [maker, fleetStats, analyticsOpen]);
+      : { analytics: "WindFleet — Fleet Analytics", data: "WindFleet — Fleet Data", forecast: "WindFleet — Fleet Forecast" }[panel] ||
+        "WindFleet — The Global Wind-Assisted Propulsion Fleet";
+  }, [maker, fleetStats, panel]);
 
   const globeVessels = useMemo(() => {
     if (makerVessels) return makerVessels;
@@ -410,7 +433,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   const handleSearchPick = useCallback(
     (v) => {
       const hidden = !globeVessels.some((g) => g.id === v.id);
-      if (isMobile && (maker != null || analyticsMode !== "closed")) {
+      if (isMobile && panelOpen) {
         // On a phone the panel covers the whole globe: close it to show the ship.
         goTo(null);
       } else if (hidden && makerVessels) {
@@ -422,11 +445,13 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
         setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
         setAnalyticsHl(null);
       }
-      // Full-screen analytics hides the globe; step back to the side panel.
-      setAnalyticsMode((m) => (m === "full" ? "quarter" : m));
+      // A full-width panel hides the globe: step back to the side panel, or
+      // close the Data table, which has no side version.
+      if (panel === "data") goTo(null);
+      else setWide(false);
       setSelected(v);
     },
-    [globeVessels, makerVessels, openMaker, goTo, isMobile, maker, analyticsMode]
+    [globeVessels, makerVessels, openMaker, goTo, isMobile, panelOpen, panel]
   );
 
   // Sea-routes are precomputed offline (scripts/build_routes.py →
@@ -527,7 +552,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
           mode it shrinks to the left so the analytics panel sits beside it. */}
       <div
         className={`absolute inset-y-0 left-0 z-0 transition-[right] duration-500 ease-in-out ${
-          analyticsMode === "quarter" || makerOpen
+          panelOpen && !isWide
             ? "right-0 md:right-[calc(72px_+_max(25%,360px))]"
             : "right-0 md:right-[72px]"
         }`}
@@ -553,7 +578,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
         className={`pointer-events-none absolute left-0 top-0 z-[45] p-4 transition-[right] duration-500 ease-in-out sm:p-6 ${
           // Full-width analytics covers the globe, so on desktop there's
           // nothing for the search to search: the panel takes the whole window.
-          analyticsMode === "full" ? "md:hidden" : ""
+          panelOpen && isWide ? "md:hidden" : ""
         }`}
       >
         <div ref={headerRef}>
@@ -760,11 +785,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
       {/* Analytics panel — beside the globe, or full width; below the header */}
       <div
         style={{ top: isMobile ? panelTop : 0 }}
-        className={`absolute bottom-[64px] right-0 z-40 overflow-hidden border-edge/60 bg-ink/95 md:bottom-0 md:right-[72px] backdrop-blur-md transition-all duration-500 ease-in-out ${
-          analyticsMode === "full"
-            ? "left-0 border-t md:border-t-0"
-            : "left-0 border-t md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-t-0"
-        } ${analyticsOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"}`}
+        className={panelClass(analyticsOpen, analyticsMode === "full")}
         aria-hidden={!analyticsOpen}
       >
         {analyticsOpen && (
@@ -772,19 +793,17 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
             vessels={vessels}
             compact={analyticsMode === "quarter"}
             onClose={closePanels}
-            onExpand={() => setAnalyticsMode("full")}
-            onCollapse={() => setAnalyticsMode("quarter")}
+            onExpand={() => setWide(true)}
+            onCollapse={() => setWide(false)}
             onHighlight={setAnalyticsHl}
           />
         )}
       </div>
 
-      {/* Maker panel — same slot and width as the analytics panel */}
+      {/* Maker panel — same slot as the analytics panel */}
       <div
         style={{ top: isMobile ? panelTop : 0 }}
-        className={`absolute bottom-[64px] left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:bottom-0 md:left-auto md:right-[72px] md:w-1/4 md:min-w-[360px] md:border-l md:border-t-0 ${
-          makerOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"
-        }`}
+        className={panelClass(makerOpen, isWide)}
         aria-hidden={!makerOpen}
       >
         {makerOpen && (
@@ -799,6 +818,24 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
           />
         )}
       </div>
+      {/* Data panel — the fleet as a table; always full width */}
+      <div
+        style={{ top: isMobile ? panelTop : 0 }}
+        className={panelClass(panel === "data", true)}
+        aria-hidden={panel !== "data"}
+      >
+        {panel === "data" && (
+          <DataTable
+            vessels={vessels}
+            onClose={closePanels}
+            onSelectVessel={(v) => {
+              goTo(null);
+              setSelected(v);
+            }}
+          />
+        )}
+      </div>
+
       <SideRail open={openPanel} onToggle={togglePanel} />
       <MobileTabBar open={openPanel} onToggle={togglePanel} />
     </main>
