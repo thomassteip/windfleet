@@ -250,6 +250,12 @@ export default function FleetExplorer({ initialMaker = null }) {
   // Panels start just below the header, so the tabs (and theme toggle and
   // vessel count) are never covered. The header's height changes with the
   // screen size, so measure it rather than hard-coding a number.
+  // Desktop side panels run the full window height beside the rail, and the
+  // header (wordmark + search) shrinks to the globe that's left, so the search
+  // stays centred over the map instead of running into the panel. Full-width
+  // analytics and phone panels still open below the header.
+  const sidePanel = !isMobile && panelOpen && analyticsMode !== "full";
+  const headerRight = isMobile ? 0 : sidePanel ? "calc(72px + max(25%, 360px))" : 72;
   const headerRef = useRef(null);
   const [panelTop, setPanelTop] = useState(80);
   useEffect(() => {
@@ -530,7 +536,10 @@ export default function FleetExplorer({ initialMaker = null }) {
       {/* Header: wordmark left, search dead centre, toolbar right (panel
           buttons, theme, count). Sits above the panels (z-45 vs 40) so search
           results can drop over them. */}
-      <header className="pointer-events-none absolute left-0 right-0 top-0 z-[45] p-4 sm:p-6 md:right-[72px]">
+      <header
+        style={{ right: headerRight }}
+        className="pointer-events-none absolute left-0 top-0 z-[45] p-4 transition-[right] duration-500 ease-in-out sm:p-6"
+      >
         <div ref={headerRef}>
           <div className="flex items-start justify-between gap-3">
             <div className="pointer-events-auto">
@@ -538,7 +547,7 @@ export default function FleetExplorer({ initialMaker = null }) {
                 wind<span className="text-muted">fleet</span>
               </h1>
               {/* hidden where it would run into the centred search */}
-              <p className="mt-1 hidden text-xs text-muted sm:block md:hidden lg:block">
+              <p className={`mt-1 hidden text-xs text-muted sm:block md:hidden ${sidePanel ? "" : "lg:block"}`}>
                 Global wind-assisted propulsion · market intel
               </p>
             </div>
@@ -554,7 +563,11 @@ export default function FleetExplorer({ initialMaker = null }) {
           </div>
         </div>
         {/* Desktop: search centred over the map (the header stops at the rail). */}
-        <div className="pointer-events-auto absolute left-1/2 top-6 hidden w-64 -translate-x-1/2 md:block xl:w-80">
+        <div
+          className={`pointer-events-auto absolute left-1/2 top-6 hidden w-64 -translate-x-1/2 xl:w-80 ${
+            sidePanel ? "lg:block" : "md:block"
+          }`}
+        >
           <VesselSearch vessels={vessels} onPick={handleSearchPick} />
         </div>
       </header>
@@ -731,11 +744,11 @@ export default function FleetExplorer({ initialMaker = null }) {
 
       {/* Analytics panel — beside the globe, or full width; below the header */}
       <div
-        style={{ top: panelTop }}
-        className={`absolute bottom-[64px] right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 md:bottom-0 md:right-[72px] backdrop-blur-md transition-all duration-500 ease-in-out ${
+        style={{ top: isMobile || analyticsMode === "full" ? panelTop : 0 }}
+        className={`absolute bottom-[64px] right-0 z-40 overflow-hidden border-edge/60 bg-ink/95 md:bottom-0 md:right-[72px] backdrop-blur-md transition-all duration-500 ease-in-out ${
           analyticsMode === "full"
-            ? "left-0"
-            : "left-0 md:left-auto md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l"
+            ? "left-0 border-t"
+            : "left-0 border-t md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-t-0"
         } ${analyticsOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"}`}
         aria-hidden={!analyticsOpen}
       >
@@ -753,8 +766,8 @@ export default function FleetExplorer({ initialMaker = null }) {
 
       {/* Maker panel — same slot and width as the analytics panel */}
       <div
-        style={{ top: panelTop }}
-        className={`absolute bottom-[64px] left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:bottom-0 md:left-auto md:right-[72px] md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l ${
+        style={{ top: isMobile ? panelTop : 0 }}
+        className={`absolute bottom-[64px] left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:bottom-0 md:left-auto md:right-[72px] md:w-1/4 md:min-w-[360px] md:border-l md:border-t-0 ${
           makerOpen ? "translate-x-0" : "translate-x-[calc(100%_+_72px)]"
         }`}
         aria-hidden={!makerOpen}
