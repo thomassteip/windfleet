@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import ThemeToggle from "./ThemeToggle";
 import { useTheme } from "./ThemeProvider";
 import { techColor, SHIP_COLORS, INSTALL_COLORS } from "@/lib/theme";
 import { SHIP_ORDER, INSTALL_ORDER } from "@/lib/analytics";
@@ -47,12 +46,11 @@ function Monogram({ name, color }) {
 }
 
 function MakerIndex({ makers, onOpen }) {
-  const max = Math.max(1, ...makers.map((m) => m.count));
   return (
     <>
       <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">makers</h1>
       <p className="mt-1 text-xs text-muted">
-        {makers.length} companies with a wind propulsion system in commercial service
+        {makers.length} companies with a wind propulsion system in commercial service, A to Z
       </p>
       <div className="mt-5 grid grid-cols-[minmax(0,1fr)_auto_2.5rem_2.75rem] gap-x-3 px-2 pb-1.5 text-[10px] uppercase tracking-wider text-muted/80">
         <span>Maker</span>
@@ -65,18 +63,8 @@ function MakerIndex({ makers, onOpen }) {
           <li key={m.slug}>
             <button
               onClick={() => onOpen(m.slug)}
-              className="relative grid w-full grid-cols-[minmax(0,1fr)_auto_2.5rem_2.75rem] items-center gap-x-3 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-edge/40"
+              className="grid w-full grid-cols-[minmax(0,1fr)_auto_2.5rem_2.75rem] items-center gap-x-3 rounded-md px-2 py-1.5 text-left text-xs transition hover:bg-edge/40"
             >
-              {/* fleet size as a hairline bar, so the list reads as a ranking */}
-              <span
-                aria-hidden="true"
-                className="absolute bottom-0.5 left-2 h-px rounded-full"
-                style={{
-                  width: `calc((100% - 1rem) * ${m.count / max})`,
-                  background: techColor(m.techs[0]),
-                  opacity: 0.55,
-                }}
-              />
               <span className="flex min-w-0 items-center gap-2">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: techColor(m.techs[0]) }} />
                 <span className="truncate text-fg">{m.name}</span>
@@ -128,7 +116,7 @@ function Timeline({ maker, lastYear }) {
         </div>
       </div>
       <ResponsiveContainer width="100%" height={130}>
-        <BarChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: -28 }}>
+        <BarChart data={data} maxBarSize={28} margin={{ top: 4, right: 0, bottom: 0, left: -28 }}>
           <XAxis
             dataKey="year"
             tick={AXIS}
@@ -172,7 +160,7 @@ function Timeline({ maker, lastYear }) {
 
 const pct = (x) => `${Math.round(x * 100)}%`;
 
-function MakerProfile({ maker, makerCount, lastYear, selectedId, onSelectVessel }) {
+function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
   const [showAll, setShowAll] = useState(false);
   const color = techColor(maker.techs[0]);
   const list = showAll ? maker.vessels : maker.vessels.slice(0, LIST_PREVIEW);
@@ -203,23 +191,6 @@ function MakerProfile({ maker, makerCount, lastYear, selectedId, onSelectVessel 
           <Stat value={maker.first} label="since" />
           <Stat value={pct(maker.retrofits / maker.count)} label="retrofit" />
         </div>
-        {/* Market position: rank among makers, share of the fleet, and share
-            of the maker's own technology. */}
-        <p className="mt-3 text-[11px] leading-relaxed text-muted">
-          <span className="font-mono tabular-nums text-fg">#{maker.rank}</span> of {makerCount} makers
-          {" · "}
-          <span className="font-mono tabular-nums text-fg">{pct(maker.fleetShare)}</span> of the WAPS fleet
-          {maker.techTotal > maker.count && (
-            <>
-              {" · "}
-              <span className="font-mono tabular-nums text-fg">{pct(maker.techShare)}</span> of{" "}
-              {maker.techs[0].toLowerCase()}s
-            </>
-          )}
-          {maker.techTotal === maker.count && maker.techTotal > 0 && (
-            <> · every {maker.techs[0].toLowerCase()} in the fleet</>
-          )}
-        </p>
       </div>
 
       <section className="mt-4">
@@ -322,29 +293,34 @@ export default function MakerPanel({
 }) {
   const maker = slug !== "index" ? makers.find((m) => m.slug === slug) : null;
 
+  // Each maker (and the list) starts at the top. Without this, opening a maker
+  // from far down the A to Z list kept the list's scroll position, so the
+  // profile appeared with its name already scrolled out of view.
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [slug]);
+
   return (
-    <div className="scroll-thin h-full w-full overflow-y-auto bg-ink">
+    <div ref={scrollRef} className="scroll-thin h-full w-full overflow-y-auto bg-ink">
       <div className="px-4 py-5">
         <div className="mb-5 flex items-center justify-between">
+          {/* The header's tabs stay visible above this panel (theme toggle
+              included), so the panel itself only needs a way back and out. */}
           {slug === "index" ? (
-            <button onClick={onClose} className="font-mono text-xs text-muted transition hover:text-fg">
-              ← back to globe
-            </button>
+            <span />
           ) : (
             <button onClick={() => onOpen("index")} className="font-mono text-xs text-muted transition hover:text-fg">
               ← all makers
             </button>
           )}
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <button
-              onClick={onClose}
-              aria-label="Close maker panel"
-              className="flex h-7 w-7 items-center justify-center rounded-md border border-edge/70 text-muted transition hover:border-accent hover:text-fg"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close maker panel"
+            className="flex h-7 w-7 items-center justify-center rounded-md border border-edge/70 text-muted transition hover:border-accent hover:text-fg"
+          >
+            ✕
+          </button>
         </div>
 
         {slug === "index" ? (
@@ -353,7 +329,6 @@ export default function MakerPanel({
           <MakerProfile
             key={maker.slug}
             maker={maker}
-            makerCount={makers.length}
             lastYear={lastYear}
             selectedId={selectedId}
             onSelectVessel={onSelectVessel}

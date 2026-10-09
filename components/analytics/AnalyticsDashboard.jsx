@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   ResponsiveContainer,
   BarChart,
@@ -178,54 +177,6 @@ function ShareBars({ rows, hl, onPick, fade }) {
   );
 }
 
-const MAKER_ROWS = 10;
-
-// Every maker, ranked by vessels with its system, as a bar list. Replaced a
-// treemap where half the makers were tiles too small to label. Each name
-// opens that maker's profile.
-function MakerRanking({ makers, noMaker, hl, onOpen }) {
-  const [all, setAll] = useState(false);
-  const max = Math.max(1, ...makers.map((m) => m.count));
-  const shown = all ? makers : makers.slice(0, MAKER_ROWS);
-  const techHl = hl && TECH_ORDER.includes(hl) ? hl : null;
-  return (
-    <div>
-      <ul className="space-y-0.5">
-        {shown.map((m) => (
-          <li key={m.slug}>
-            <button
-              onClick={() => onOpen(m.slug)}
-              className="grid w-full grid-cols-[minmax(0,9rem)_minmax(4rem,1fr)_2rem] items-center gap-3 rounded-md px-1.5 py-1 text-left transition hover:bg-edge/40"
-              style={{ opacity: !techHl || m.techs.includes(techHl) ? 1 : FADE + 0.15 }}
-              title={`${m.name}: ${m.count} vessel${m.count === 1 ? "" : "s"} · ${m.techs.join(", ")}${m.country ? ` · ${m.country}` : ""}`}
-            >
-              <span className="truncate text-xs text-fg">{m.name}</span>
-              <span className="h-3 overflow-hidden rounded-sm">
-                <span
-                  className="block h-full rounded-r-sm"
-                  style={{ width: `${(m.count / max) * 100}%`, background: techColor(m.techs[0]) }}
-                />
-              </span>
-              <span className="text-right font-mono text-xs tabular-nums text-fg">{m.count}</span>
-            </button>
-          </li>
-        ))}
-      </ul>
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted">
-        <span>
-          Bar colour = the maker's main technology
-          {noMaker > 0 && ` · ${noMaker} vessel${noMaker === 1 ? " has" : "s have"} no maker listed`}
-        </span>
-        {makers.length > MAKER_ROWS && (
-          <button onClick={() => setAll((a) => !a)} className="text-accent hover:underline">
-            {all ? "Show top 10" : `Show all ${makers.length}`}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
 const KPI = ({ value, label, highlight }) => (
   <div className="rounded-xl border border-edge/50 bg-panel/50 px-4 py-3">
     <div
@@ -244,18 +195,9 @@ export default function AnalyticsDashboard({
   onExpand,
   onCollapse,
   onHighlight,
-  onOpenMaker,
   vessels,
 }) {
   const { theme } = useTheme();
-  const router = useRouter();
-  // A treemap tile opens that maker ("Other" opens the list of all makers):
-  // in place when we're the explorer's side panel, by navigation when we're
-  // the standalone /analytics page.
-  const openMaker = (slug) => {
-    if (onOpenMaker) onOpenMaker(slug || "index");
-    else router.push(slug ? `/makers/${slug}` : "/makers");
-  };
   const [dim, setDim] = useState("ship");
   const [metric, setMetric] = useState("devices");
   const [hl, setHl] = useState(null);
@@ -301,7 +243,6 @@ export default function AnalyticsDashboard({
     LAST_YEAR,
     TECH_SHARE,
     TECH_INSTALL,
-    MAKERS,
     marketSize,
   } = A;
 
@@ -375,7 +316,9 @@ export default function AnalyticsDashboard({
                 </svg>
               </button>
             )}
-            <ThemeToggle />
+            {/* Inside the explorer the header's toggle stays visible above
+                this panel; only the standalone /analytics page needs its own. */}
+            {!onClose && <ThemeToggle />}
           </div>
         </div>
 
@@ -494,8 +437,8 @@ export default function AnalyticsDashboard({
           </Card>
         </div>
 
-        {/* Market size */}
-        <div className="mb-6">
+        {/* Market size (last card, so it carries the bottom spacing) */}
+        <div className="mb-10">
           <Card
             title="Market size per technology"
             action={
@@ -526,10 +469,6 @@ export default function AnalyticsDashboard({
           </Card>
         </div>
 
-        {/* Makers, ranked */}
-        <Card title="Makers · vessels with their system · click a maker for its profile" className="mb-10">
-          <MakerRanking makers={MAKERS} noMaker={KPIS.noMaker} hl={hl} onOpen={openMaker} />
-        </Card>
       </div>
     </div>
   );

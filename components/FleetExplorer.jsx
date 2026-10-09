@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FALLBACK_VESSELS, fetchVessels } from "@/lib/data";
 import GlobeView from "./GlobeView";
 import FilterPanel from "./FilterPanel";
@@ -73,6 +73,38 @@ function WindVariantSwitch({ value, onChange }) {
   );
 }
 
+// The app's three views. Replaced a right-edge "Analytics" pull tab and a
+// small "makers" box in the corner (Oct 2026): two different, easy-to-miss
+// entry points for what are really places in the app. The panels open below
+// the header, so these tabs stay visible and switch views in one click.
+const VIEWS = [
+  ["globe", "Globe"],
+  ["analytics", "Analytics"],
+  ["makers", "Makers"],
+];
+
+function NavTabs({ view, onChange, className = "" }) {
+  return (
+    <nav
+      aria-label="Views"
+      className={`pointer-events-auto flex gap-0.5 rounded-xl border border-edge/60 bg-panel/70 p-0.5 backdrop-blur-md ${className}`}
+    >
+      {VIEWS.map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          aria-current={view === key ? "page" : undefined}
+          className={`flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs transition ${
+            view === key ? "bg-accent/20 text-fg" : "text-muted hover:text-fg"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 // "/makers" -> "index", "/makers/norsepower" -> "norsepower", else null.
 function makerFromPath(path) {
   const m = path.match(/^\/makers(?:\/([^/]+))?\/?$/);
@@ -130,8 +162,31 @@ export default function FleetExplorer({ initialMaker = null }) {
 
   const openAnalytics = () => {
     if (makerOpen) openMaker(null);
-    setAnalyticsMode("quarter");
+    setAnalyticsMode((m) => (m === "closed" ? "quarter" : m));
   };
+
+  const view = makerOpen ? "makers" : analyticsOpen ? "analytics" : "globe";
+  const setView = (v) => {
+    if (v === "analytics") openAnalytics();
+    else if (v === "makers") openMaker("index");
+    else {
+      if (makerOpen) openMaker(null);
+      closeAnalytics();
+    }
+  };
+
+  // Panels start just below the header, so the tabs (and theme toggle and
+  // vessel count) are never covered. The header's height changes with the
+  // screen size, so measure it rather than hard-coding a number.
+  const headerRef = useRef(null);
+  const [panelTop, setPanelTop] = useState(80);
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(() => setPanelTop(Math.round(el.getBoundingClientRect().bottom) + 12));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Back/forward between maker views.
   useEffect(() => {
@@ -269,6 +324,8 @@ export default function FleetExplorer({ initialMaker = null }) {
         setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
         setAnalyticsHl(null);
       }
+      // Full-screen analytics hides the globe; step back to the side panel.
+      setAnalyticsMode((m) => (m === "full" ? "quarter" : m));
       setSelected(v);
     },
     [globeVessels, makerVessels, openMaker]
@@ -372,7 +429,7 @@ export default function FleetExplorer({ initialMaker = null }) {
           mode it shrinks to the left so the analytics panel sits beside it. */}
       <div
         className={`absolute inset-y-0 left-0 z-0 transition-[right] duration-500 ease-in-out ${
-          analyticsMode === "quarter" || makerOpen ? "right-0 md:right-1/4" : "right-0"
+          analyticsMode === "quarter" || makerOpen ? "right-0 md:right-[max(25%,360px)]" : "right-0"
         }`}
       >
         <GlobeView
@@ -389,47 +446,50 @@ export default function FleetExplorer({ initialMaker = null }) {
         />
       </div>
 
-      {/* Header */}
-      <header className="pointer-events-none absolute left-0 top-0 z-[35] flex w-full items-start justify-between gap-3 p-4 sm:p-6">
-        <div className="pointer-events-auto">
-          <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">
-            wind<span className="text-muted">fleet</span>
-          </h1>
-          <p className="mt-1 text-xs text-muted">
-            Global wind-assisted propulsion · market intel
-          </p>
-        </div>
-        {/* Centred on desktop; on phones it drops to its own row under the
-            wordmark row so it doesn't squeeze the count and theme toggle. */}
-        {/* With a side panel open (it is max(25%, 360px) wide) the box parks
-            against the panel's left edge and narrows as needed, so it neither
-            slides under the panel nor runs into the wordmark. */}
-        <div
-          className={`pointer-events-auto absolute inset-x-4 top-[92px] sm:inset-x-6 sm:top-[72px] md:top-5 sm:md:top-6 ${
-            panelOpen
-              ? "md:left-auto md:right-[calc(max(25%,360px)_+_1.5rem)] md:w-[min(20rem,calc(100%_-_max(25%,360px)_-_16rem))]"
-              : "md:inset-x-auto md:left-1/2 md:w-80 md:-translate-x-1/2"
-          }`}
-        >
-          <VesselSearch vessels={vessels} onPick={handleSearchPick} />
-        </div>
-        <div className="pointer-events-auto flex items-center gap-3">
-          <button
-            onClick={() => openMaker("index")}
-            className="rounded-lg border border-edge/60 bg-panel/70 px-3 py-2 font-mono text-[11px] lowercase text-muted backdrop-blur-md transition hover:border-accent hover:text-fg"
-          >
-            makers
-          </button>
-          <ThemeToggle />
-          <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
-            <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
-              {String((makerVessels || filtered).length).padStart(2, "0")}
+      {/* Header: wordmark, view tabs, search, theme + count. Sits above the
+          panels (z-45 vs 40) so the search results can drop over them. */}
+      <header className="pointer-events-none absolute left-0 top-0 z-[45] w-full p-4 sm:p-6">
+        <div ref={headerRef}>
+          <div className="flex items-center gap-4">
+            <div className="pointer-events-auto shrink-0">
+              <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">
+                wind<span className="text-muted">fleet</span>
+              </h1>
+              <p className="mt-1 hidden text-xs text-muted xl:block">
+                Global wind-assisted propulsion · market intel
+              </p>
             </div>
-            <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
-              vessels
+            <NavTabs view={view} onChange={setView} className="hidden md:flex" />
+            {/* Search takes whatever room is left between the tabs and the
+                count, up to 20rem, centred in it. */}
+            <div className="hidden min-w-0 flex-1 justify-center md:flex">
+              <div className="pointer-events-auto w-full max-w-80">
+                <VesselSearch vessels={vessels} onPick={handleSearchPick} />
+              </div>
+            </div>
+            <div className="pointer-events-auto ml-auto flex shrink-0 items-center gap-3">
+              <ThemeToggle />
+              <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
+                <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
+                  {String((makerVessels || filtered).length).padStart(2, "0")}
+                </div>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
+                  vessels
+                </div>
+              </div>
             </div>
           </div>
+          {/* Phones: tabs get a full-width row of their own. */}
+          <NavTabs view={view} onChange={setView} className="mt-3 md:hidden" />
         </div>
+        {/* Phones: search below the tabs, only while the globe is showing
+            (a panel covers this area). Outside the measured block, so the
+            panels don't start lower just to make room for it. */}
+        {!panelOpen && (
+          <div className="pointer-events-auto mt-2 md:hidden">
+            <VesselSearch vessels={vessels} onPick={handleSearchPick} />
+          </div>
+        )}
       </header>
 
       {/* Backdrop behind the mobile filter sheet — tap to dismiss. */}
@@ -479,8 +539,6 @@ export default function FleetExplorer({ initialMaker = null }) {
           filters={filters}
           setFilters={setFilters}
           counts={counts}
-          makers={fleetStats.MAKERS}
-          onOpenMaker={openMaker}
         />
 
         {/* Wind layer (compact, under the filters) */}
@@ -599,28 +657,13 @@ export default function FleetExplorer({ initialMaker = null }) {
         </button>
       )}
 
-      {/* Right-edge handle to open analytics */}
-      {!panelOpen && (
-        <button
-          onClick={openAnalytics}
-          aria-label="Open fleet analytics"
-          className="group absolute right-0 top-1/2 z-20 flex -translate-y-1/2 items-center gap-2 rounded-l-xl border border-r-0 border-edge/60 bg-panel/80 py-5 pl-3 pr-2 backdrop-blur-md transition hover:bg-panel"
-        >
-          <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-muted [writing-mode:vertical-rl] rotate-180 transition group-hover:text-fg">
-            Analytics
-          </span>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted transition group-hover:text-accent">
-            <path d="M15 18l-6-6 6-6" />
-          </svg>
-        </button>
-      )}
-
-      {/* Analytics panel — quarter-width beside the globe, or full screen */}
+      {/* Analytics panel — beside the globe, or full width; below the header */}
       <div
-        className={`absolute inset-y-0 right-0 z-40 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
+        style={{ top: panelTop }}
+        className={`absolute bottom-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out ${
           analyticsMode === "full"
-            ? "left-0 border-l-0"
-            : "left-0 border-l-0 md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-edge/60"
+            ? "left-0"
+            : "left-0 md:left-auto md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l"
         } ${analyticsOpen ? "translate-x-0" : "translate-x-full"}`}
         aria-hidden={!analyticsOpen}
       >
@@ -632,14 +675,14 @@ export default function FleetExplorer({ initialMaker = null }) {
             onExpand={() => setAnalyticsMode("full")}
             onCollapse={() => setAnalyticsMode("quarter")}
             onHighlight={setAnalyticsHl}
-            onOpenMaker={openMaker}
           />
         )}
       </div>
 
       {/* Maker panel — same slot and width as the analytics panel */}
       <div
-        className={`absolute inset-y-0 right-0 z-40 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out left-0 border-l-0 md:left-auto md:w-1/4 md:min-w-[360px] md:border-l md:border-edge/60 ${
+        style={{ top: panelTop }}
+        className={`absolute bottom-0 left-0 right-0 z-40 overflow-hidden border-t border-edge/60 bg-ink/95 backdrop-blur-md transition-all duration-500 ease-in-out md:left-auto md:w-1/4 md:min-w-[360px] md:rounded-tl-2xl md:border-l ${
           makerOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!makerOpen}
