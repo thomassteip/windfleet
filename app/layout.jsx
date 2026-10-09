@@ -5,7 +5,7 @@ import { Analytics } from "@vercel/analytics/next";
 export const metadata = {
   title: "WindFleet — The Global Wind-Assisted Propulsion Fleet",
   description:
-    "An interactive map of every commercial vessel installed with wind-assisted propulsion systems (WAPS): rotor sails, wing sails, suction sails, kites and traditional sails.",
+    "An interactive map of every commercial vessel installed with wind-assisted propulsion systems (WAPS): rotor sails, wing sails, suction sails, kites and soft sails.",
 };
 
 export const viewport = {

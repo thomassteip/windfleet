@@ -143,7 +143,7 @@ Set in June 2026, don't drift from it:
 - Colours are CSS-variable RGB channels in `globals.css` mapped to tokens
   (ink/panel/edge/muted/fg/accent). **Use `text-fg`, never `text-white`.**
 - Palette is IEA "pop" categorical, in `lib/theme.js` as `POP`. `TECH_COLORS`:
-  Rotor=cyan, Suction=orange, Wing=green, Traditional=purple, Kite=yellow.
+  Rotor=cyan, Suction=orange, Wing=green, Soft Sail=rose, Kite=yellow.
 - Charts are cross-filtered: clicking a technology fades non-matching segments across
   the tech-based charts, and highlights the matching dots on the globe.
 
@@ -151,7 +151,7 @@ Set in June 2026, don't drift from it:
 
 A **WAPS vessel** = any vessel in commercial service (cargo or fare-paying passenger)
 fitted with a wind propulsion device, at any size — 292 dwt sail-cargo through VLOC,
-rotor/suction/wing/rigid/kite/traditional rigs, wind as main or assisting propulsion.
+rotor/suction/wing/rigid/kite/soft-sail rigs, wind as main or assisting propulsion.
 Excluded: private yachts, sail-training vessels, naval ships, pure R&D demonstrators,
 and anything on order until the system is **physically installed**.
 

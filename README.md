@@ -1,6 +1,6 @@
 # WindFleet
 
-Interactive map and analytics for the global **wind-assisted propulsion (WAPS)** fleet — every commercial vessel installed with rotor sails, wing sails, suction sails, kites or traditional rig. Built with Next.js and react-globe.gl.
+Interactive map and analytics for the global **wind-assisted propulsion (WAPS)** fleet — every commercial vessel installed with rotor sails, wing sails, suction sails, kites or soft sails. Built with Next.js and react-globe.gl.
 
 **🌐 Live app: https://windfleet.vercel.app**
 
