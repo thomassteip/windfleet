@@ -73,35 +73,53 @@ function WindVariantSwitch({ value, onChange }) {
   );
 }
 
-// The app's three views. Replaced a right-edge "Analytics" pull tab and a
-// small "makers" box in the corner (Oct 2026): two different, easy-to-miss
-// entry points for what are really places in the app. The panels open below
-// the header, so these tabs stay visible and switch views in one click.
-const VIEWS = [
-  ["globe", "Globe"],
-  ["analytics", "Analytics"],
-  ["makers", "Makers"],
+// Open/close buttons for the two side panels, in the top-right toolbar next to
+// the theme toggle, directly above where the panels open. Same size and style
+// as the theme toggle so the row reads as one toolbar. History: a right-edge
+// "Analytics" pull tab plus a small "makers" box (two unrelated entry points),
+// then Globe/Analytics/Makers tabs beside the wordmark (the globe isn't a
+// view you switch to, and the tabs pushed the search off centre). Oct 2026.
+const PANELS = [
+  {
+    key: "analytics",
+    label: "Analytics",
+    icon: <path d="M3 3v18h18M7.5 16v-3M12 16V8M16.5 16v-6" />,
+  },
+  {
+    key: "makers",
+    label: "Makers",
+    // a factory outline: the companies that build the wind systems
+    icon: <path d="M3 21V10l5 3v-3l5 3v-3l5 3V4h3v17zM3 21h18" />,
+  },
 ];
 
-function NavTabs({ view, onChange, className = "" }) {
+function PanelButtons({ open, onToggle, labels = true, className = "" }) {
   return (
-    <nav
-      aria-label="Views"
-      className={`pointer-events-auto flex gap-0.5 rounded-xl border border-edge/60 bg-panel/70 p-0.5 backdrop-blur-md ${className}`}
-    >
-      {VIEWS.map(([key, label]) => (
-        <button
-          key={key}
-          onClick={() => onChange(key)}
-          aria-current={view === key ? "page" : undefined}
-          className={`flex-1 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs transition ${
-            view === key ? "bg-accent/20 text-fg" : "text-muted hover:text-fg"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </nav>
+    <div className={`pointer-events-auto flex items-center gap-2 ${className}`}>
+      {PANELS.map(({ key, label, icon }) => {
+        const on = open === key;
+        return (
+          <button
+            key={key}
+            onClick={() => onToggle(key)}
+            aria-pressed={on}
+            aria-label={on ? `Close ${label.toLowerCase()}` : label}
+            title={on ? `Close ${label.toLowerCase()}` : label}
+            className={`flex h-9 items-center gap-2 rounded-xl border px-2.5 text-xs backdrop-blur-md transition ${
+              on
+                ? "border-accent bg-accent/15 text-fg"
+                : "border-edge/60 bg-panel/70 text-muted hover:border-accent hover:text-fg"
+            }`}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              {icon}
+            </svg>
+            {/* Labels only where the toolbar has room beside the centred search. */}
+            {labels && <span className="hidden pr-0.5 lg:inline">{label}</span>}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -165,15 +183,30 @@ export default function FleetExplorer({ initialMaker = null }) {
     setAnalyticsMode((m) => (m === "closed" ? "quarter" : m));
   };
 
-  const view = makerOpen ? "makers" : analyticsOpen ? "analytics" : "globe";
-  const setView = (v) => {
-    if (v === "analytics") openAnalytics();
-    else if (v === "makers") openMaker("index");
-    else {
-      if (makerOpen) openMaker(null);
-      closeAnalytics();
-    }
+  // Which panel is showing, for the toolbar buttons. Clicking a button opens
+  // its panel; clicking it again closes it (as do the panel's ✕ and Esc).
+  const openPanel = makerOpen ? "makers" : analyticsOpen ? "analytics" : null;
+  const closePanels = () => {
+    if (makerOpen) openMaker(null);
+    closeAnalytics();
   };
+  const togglePanel = (key) => {
+    if (openPanel === key) closePanels();
+    else if (key === "analytics") openAnalytics();
+    else openMaker("index");
+  };
+  const closePanelsRef = useRef(closePanels);
+  closePanelsRef.current = closePanels;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      const t = e.target;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      closePanelsRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Panels start just below the header, so the tabs (and theme toggle and
   // vessel count) are never covered. The header's height changes with the
@@ -317,10 +350,17 @@ export default function FleetExplorer({ initialMaker = null }) {
   // so the ship you asked for is actually visible on the globe.
   const handleSearchPick = useCallback(
     (v) => {
-      if (!globeVessels.some((g) => g.id === v.id)) {
+      const hidden = !globeVessels.some((g) => g.id === v.id);
+      if (isMobile && (maker != null || analyticsMode !== "closed")) {
+        // On a phone the panel covers the whole globe: close it to show the ship.
+        if (maker != null) openMaker(null);
+        setAnalyticsMode("closed");
+      } else if (hidden && makerVessels) {
         // A maker profile limits the globe to that maker's fleet: follow the
         // ship to its own maker's profile, or close the panel if it has none.
-        if (makerVessels) openMaker(hasMaker(v.oem) ? makerSlug(v.oem) : null);
+        openMaker(hasMaker(v.oem) ? makerSlug(v.oem) : null);
+      }
+      if (hidden) {
         setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
         setAnalyticsHl(null);
       }
@@ -328,7 +368,7 @@ export default function FleetExplorer({ initialMaker = null }) {
       setAnalyticsMode((m) => (m === "full" ? "quarter" : m));
       setSelected(v);
     },
-    [globeVessels, makerVessels, openMaker]
+    [globeVessels, makerVessels, openMaker, isMobile, maker, analyticsMode]
   );
 
   // Sea-routes are precomputed offline (scripts/build_routes.py →
@@ -446,28 +486,23 @@ export default function FleetExplorer({ initialMaker = null }) {
         />
       </div>
 
-      {/* Header: wordmark, view tabs, search, theme + count. Sits above the
-          panels (z-45 vs 40) so the search results can drop over them. */}
+      {/* Header: wordmark left, search dead centre, toolbar right (panel
+          buttons, theme, count). Sits above the panels (z-45 vs 40) so search
+          results can drop over them. */}
       <header className="pointer-events-none absolute left-0 top-0 z-[45] w-full p-4 sm:p-6">
         <div ref={headerRef}>
-          <div className="flex items-center gap-4">
-            <div className="pointer-events-auto shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="pointer-events-auto">
               <h1 className="font-mono text-xl font-medium lowercase tracking-tight text-fg">
                 wind<span className="text-muted">fleet</span>
               </h1>
-              <p className="mt-1 hidden text-xs text-muted xl:block">
+              {/* hidden where it would run into the centred search */}
+              <p className="mt-1 hidden text-xs text-muted sm:block md:hidden lg:block">
                 Global wind-assisted propulsion · market intel
               </p>
             </div>
-            <NavTabs view={view} onChange={setView} className="hidden md:flex" />
-            {/* Search takes whatever room is left between the tabs and the
-                count, up to 20rem, centred in it. */}
-            <div className="hidden min-w-0 flex-1 justify-center md:flex">
-              <div className="pointer-events-auto w-full max-w-80">
-                <VesselSearch vessels={vessels} onPick={handleSearchPick} />
-              </div>
-            </div>
-            <div className="pointer-events-auto ml-auto flex shrink-0 items-center gap-3">
+            <div className="pointer-events-auto flex items-center gap-2 sm:gap-3">
+              <PanelButtons open={openPanel} onToggle={togglePanel} className="hidden md:flex" />
               <ThemeToggle />
               <div className="rounded-xl border border-edge/60 bg-panel/70 px-4 py-2 text-right backdrop-blur-md">
                 <div className="font-mono text-2xl font-semibold leading-none tabular-nums text-fg">
@@ -479,17 +514,19 @@ export default function FleetExplorer({ initialMaker = null }) {
               </div>
             </div>
           </div>
-          {/* Phones: tabs get a full-width row of their own. */}
-          <NavTabs view={view} onChange={setView} className="mt-3 md:hidden" />
-        </div>
-        {/* Phones: search below the tabs, only while the globe is showing
-            (a panel covers this area). Outside the measured block, so the
-            panels don't start lower just to make room for it. */}
-        {!panelOpen && (
-          <div className="pointer-events-auto mt-2 md:hidden">
-            <VesselSearch vessels={vessels} onPick={handleSearchPick} />
+          {/* Phones: search and the panel buttons share a row under the
+              wordmark. */}
+          <div className="mt-3 flex items-center gap-2 md:hidden">
+            <div className="pointer-events-auto min-w-0 flex-1">
+              <VesselSearch vessels={vessels} onPick={handleSearchPick} />
+            </div>
+            <PanelButtons open={openPanel} onToggle={togglePanel} labels={false} />
           </div>
-        )}
+        </div>
+        {/* Desktop: search centred on the screen, whatever else is open. */}
+        <div className="pointer-events-auto absolute left-1/2 top-6 hidden w-64 -translate-x-1/2 md:block xl:w-80">
+          <VesselSearch vessels={vessels} onPick={handleSearchPick} />
+        </div>
       </header>
 
       {/* Backdrop behind the mobile filter sheet — tap to dismiss. */}
