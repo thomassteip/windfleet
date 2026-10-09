@@ -110,8 +110,8 @@ The fix, and the invariant to preserve:
 - `lib/analytics.js` exports `buildAnalytics(fleet)` — a pure function of the array you
   hand it — plus `FALLBACK_ANALYTICS` for first paint only.
 - `AnalyticsDashboard` takes an optional `vessels` prop. `FleetExplorer` passes its live
-  fleet down (no second fetch); the standalone `/analytics` route fetches for itself via
-  the same `fetchVessels()`.
+  fleet down (no second fetch). If it's ever rendered on its own without one, it fetches
+  for itself via the same `fetchVessels()`.
 - Adding a chart means deriving it **inside** `buildAnalytics`. Don't reach for the JSON.
 
 ## Stack
@@ -121,14 +121,21 @@ policy) · MapLibre GL (globe projection) · Recharts · deployed on Vercel.
 
 `next` is pinned at 14.2.35 deliberately — bump with care.
 
-- `app/` — `/` globe explorer, `/analytics` dashboard
-- `components/` — `FleetExplorer` (state owner), `GlobeView`, `FilterPanel`, `VesselCard`
-- `components/analytics/` — `AnalyticsDashboard`, `RibbonChart`
-- `lib/` — `data.js` (Supabase + fallback), `analytics.js`, `theme.js`, `wind.js`, `ports.js`
+- `app/` — every route renders the explorer: `/` plain globe; `/analytics`, `/makers`,
+  `/makers/<slug>` open it with that panel showing
+- `components/` — `FleetExplorer` (state owner), `GlobeView`, `FilterPanel`, `VesselCard`,
+  `VesselSearch`, `MakerPanel`, `PanelBar` (the shared panel top bar)
+- `components/analytics/` — `AnalyticsDashboard`, `RibbonChart`, `ChartTip`
+- `lib/` — `data.js` (Supabase + fallback), `analytics.js`, `makers.js` (maker websites),
+  `chart.js`, `theme.js`, `wind.js`, `ports.js`
 
-`AnalyticsDashboard` renders in two places: the `/analytics` page, and a slide-out panel
-inside `FleetExplorer` (right-edge handle). Both paths must keep working — check both
-after touching it.
+Navigation (Oct 2026): a fixed rail down the right edge lists the sections (Analytics,
+Makers, and Forecast/Performance greyed out as a deliberate public teaser); on phones it's
+a bottom tab bar. Each panel opens beside the rail at full window height, and every panel
+has its own address, kept in step by `FleetExplorer` (`goTo`/`viewFromPath`), so the
+browser's Back button closes panels. A new section needs a rail entry, a route and a
+`viewFromPath` case. `AnalyticsDashboard` has two widths, side panel and full width (which
+hides the header): check both after touching it.
 
 ## Design system
 
@@ -156,7 +163,8 @@ Excluded: private yachts, sail-training vessels, naval ships, pure R&D demonstra
 and anything on order until the system is **physically installed**.
 
 `Installed Year` = the year the system was fitted, not the year the deal was announced.
-`Status` enum is Active / Removed / Decommissioned (all rows currently Active).
+`Status` enum is Active / Removed / Decommissioned. Non-Active rows are filtered out
+everywhere (`isActive` in `lib/data.js`); two rows are Removed as of Oct 2026.
 
 `Build Yard` = who built the hull. `Install Yard` = who physically fitted the wind
 system. For newbuilds these are usually the same yard (the rig goes on during
@@ -164,6 +172,13 @@ construction); for retrofits they diverge, and that gap is the interesting signa
 Baltic Timber was built at Damen Yichang and fitted at Damen Shiprepair Harlingen.
 Coverage is deliberately partial (10 of 112 as of Aug 2026): **leave a yard blank rather
 than guessing.** Honest gaps beat invented yards.
+
+**Makers are never ranked** (Oct 2026 decision): no leaderboards, ranks, market shares
+or size-ordered maker lists anywhere. Makers are listed A to Z and a profile states only
+that maker's own facts. Per-maker figures come from `buildAnalytics` (`MAKERS`); maker
+websites are hand-curated in `lib/makers.js`, checked by loading each page (leave one out
+rather than guess). A maker's name is the workbook's `WAPS OEM` value, so renaming a maker
+is a workbook edit plus a rebuild, not a code change.
 
 Rows whose Notes contain `VERIFY` have unconfirmed data — usually a missing IMO or an
 inferred spec. Don't treat them as settled, and don't silently "clean" them.
@@ -262,11 +277,6 @@ Planned next, in rough order:
   select policy hand the whole table to anyone who opens devtools. Real gating means
   Supabase Auth plus a second RLS policy, or holding the gated columns in a table the
   anon role can't select at all.
-- **OEM pages.** One page per WAPS maker: their fleet, install timeline, technology mix,
-  ship types they've landed. The OEM name becomes a link *everywhere it appears* —
-  `VesselCard` details, the analytics charts, and the filter panel — so the drill-down is
-  reachable from anywhere the name is rendered, not just from an index page. Derive the
-  per-OEM figures inside `buildAnalytics`, same as any other chart.
 - **Literature and results.** A place for published performance and fuel-saving results —
   sea-trial reports, class society studies, OEM claims — linked to the vessels and OEMs
   they measure. Provenance matters more than the number here: whose figure, measured how,
