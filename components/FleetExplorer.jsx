@@ -263,12 +263,15 @@ export default function FleetExplorer({ initialMaker = null }) {
   const handleSearchPick = useCallback(
     (v) => {
       if (!globeVessels.some((g) => g.id === v.id)) {
+        // A maker profile limits the globe to that maker's fleet: follow the
+        // ship to its own maker's profile, or close the panel if it has none.
+        if (makerVessels) openMaker(hasMaker(v.oem) ? makerSlug(v.oem) : null);
         setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
         setAnalyticsHl(null);
       }
       setSelected(v);
     },
-    [globeVessels]
+    [globeVessels, makerVessels, openMaker]
   );
 
   // Sea-routes are precomputed offline (scripts/build_routes.py →
@@ -398,7 +401,16 @@ export default function FleetExplorer({ initialMaker = null }) {
         </div>
         {/* Centred on desktop; on phones it drops to its own row under the
             wordmark row so it doesn't squeeze the count and theme toggle. */}
-        <div className="pointer-events-auto absolute inset-x-4 top-[92px] sm:inset-x-6 sm:top-[72px] md:inset-x-auto md:left-1/2 md:top-5 md:w-80 md:-translate-x-1/2 sm:md:top-6">
+        {/* With a side panel open (it is max(25%, 360px) wide) the box parks
+            against the panel's left edge and narrows as needed, so it neither
+            slides under the panel nor runs into the wordmark. */}
+        <div
+          className={`pointer-events-auto absolute inset-x-4 top-[92px] sm:inset-x-6 sm:top-[72px] md:top-5 sm:md:top-6 ${
+            panelOpen
+              ? "md:left-auto md:right-[calc(max(25%,360px)_+_1.5rem)] md:w-[min(20rem,calc(100%_-_max(25%,360px)_-_16rem))]"
+              : "md:inset-x-auto md:left-1/2 md:w-80 md:-translate-x-1/2"
+          }`}
+        >
           <VesselSearch vessels={vessels} onPick={handleSearchPick} />
         </div>
         <div className="pointer-events-auto flex items-center gap-3">
@@ -467,6 +479,8 @@ export default function FleetExplorer({ initialMaker = null }) {
           filters={filters}
           setFilters={setFilters}
           counts={counts}
+          makers={fleetStats.MAKERS}
+          onOpenMaker={openMaker}
         />
 
         {/* Wind layer (compact, under the filters) */}

@@ -2,6 +2,8 @@
 
 import { TECH_ORDER, techColor } from "@/lib/theme";
 
+const MAKER_CHIPS = 6;
+
 function Chip({ label, color, active, onClick }) {
   return (
     <button
@@ -32,6 +34,8 @@ export default function FilterPanel({
   setFilters,
   yearRange,
   counts,
+  makers = [],
+  onOpenMaker,
 }) {
   const toggle = (key, value) => {
     setFilters((f) => {
@@ -107,6 +111,28 @@ export default function FilterPanel({
         </div>
       </Section>
 
+      {/* Makers aren't a filter: each opens that maker's profile, which shows
+          its fleet on the globe. Biggest first; the rest are one click away. */}
+      {onOpenMaker && makers.length > 0 && (
+        <Section title="Makers">
+          <div className="flex flex-wrap gap-2">
+            {makers.slice(0, MAKER_CHIPS).map((m) => (
+              <Chip
+                key={m.slug}
+                label={`${m.name} (${m.count})`}
+                color={techColor(m.techs[0])}
+                onClick={() => onOpenMaker(m.slug)}
+              />
+            ))}
+          </div>
+          <button
+            onClick={() => onOpenMaker("index")}
+            className="self-start text-[11px] text-accent hover:underline"
+          >
+            All {makers.length} makers →
+          </button>
+        </Section>
+      )}
     </div>
   );
 }

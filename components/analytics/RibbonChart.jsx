@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { niceTicks } from "@/lib/chart";
 
 // Stacked ordered area / ribbon chart. Columns per year, segments ranked
 // (largest on top) and connected across years by ribbons. Absolute values,
 // so column height also reflects the annual total.
+//
+// Drawn at the container's real pixel width (measured), not scaled from a
+// fixed canvas: in the ~330px side panel a scaled 820px drawing shrank its
+// axis text to about 4px.
 export default function RibbonChart({
   data, // [{ year, [cat]: value }]
   cats, // category keys
@@ -15,13 +20,21 @@ export default function RibbonChart({
   partialYear = null,
 }) {
   const [hover, setHover] = useState(null);
+  const boxRef = useRef(null);
+  const [W, setW] = useState(820);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return undefined;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(240, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const W = 820;
-  const H = 320;
+  const H = Math.round(Math.min(320, Math.max(200, W * 0.39)));
   const ML = 34;
-  const MR = 14;
+  const MR = 8;
   const MT = 16;
-  const MB = 30;
+  const MB = 26;
   const plotW = W - ML - MR;
   const plotH = H - MT - MB;
   const baseline = MT + plotH;
@@ -30,13 +43,20 @@ export default function RibbonChart({
   const grid = theme === "dark" ? "#16243a" : "#e6eaf1";
 
   const totals = data.map((d) => cats.reduce((s, c) => s + (d[c] || 0), 0));
-  const maxTotal = Math.max(...totals, 1);
+  const ticks = niceTicks(Math.max(...totals, 1), 5);
+  const maxTotal = ticks[ticks.length - 1];
   const scale = plotH / maxTotal;
 
   const n = data.length;
   const slot = plotW / n;
-  const bw = Math.min(34, slot * 0.32);
+  // Narrow slots get proportionally wider bars, or they vanish into slivers.
+  const bw = Math.min(34, slot * (slot < 30 ? 0.55 : 0.32));
   const xCenter = (i) => ML + (i + 0.5) * slot;
+  // Year labels: full when there's room, '24 when tight, every other year when
+  // even that collides. The newest year is always labelled.
+  const shortYears = slot < 36;
+  const labelEvery = slot < 20 ? 2 : 1;
+  const showYear = (i) => (n - 1 - i) % labelEvery === 0;
 
   // Per year: ranked segments (largest on top) with y bounds.
   const layout = data.map((d, i) => {
@@ -89,16 +109,16 @@ export default function RibbonChart({
   }
 
   return (
-    <div style={{ position: "relative" }}>
-      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block" }}>
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ display: "block", maxWidth: "100%" }}>
         {/* gridlines */}
-        {[0, 0.25, 0.5, 0.75, 1].map((f) => {
-          const y = baseline - f * plotH;
+        {ticks.map((t) => {
+          const y = baseline - t * scale;
           return (
-            <g key={f}>
+            <g key={t}>
               <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={grid} />
               <text x={ML - 6} y={y + 3} textAnchor="end" fontSize="10" fill={axis} fontFamily="IBM Plex Mono, monospace">
-                {Math.round(f * maxTotal)}
+                {t}
               </text>
             </g>
           );
@@ -135,16 +155,18 @@ export default function RibbonChart({
                 />
               );
             })}
-            <text
-              x={xCenter(i)}
-              y={H - 10}
-              textAnchor="middle"
-              fontSize="10"
-              fill={axis}
-              fontFamily="IBM Plex Mono, monospace"
-            >
-              {d.year}
-            </text>
+            {showYear(i) && (
+              <text
+                x={xCenter(i)}
+                y={H - 8}
+                textAnchor="middle"
+                fontSize="10"
+                fill={axis}
+                fontFamily="IBM Plex Mono, monospace"
+              >
+                {shortYears ? `'${d.year.slice(2)}` : d.year}
+              </text>
+            )}
             {partialYear && d.year === partialYear && (
               <text x={xCenter(i)} y={MT + 10} textAnchor="middle" fontSize="9" fill={axis}>
                 YTD

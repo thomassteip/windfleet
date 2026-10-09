@@ -18,6 +18,7 @@ import {
   Legend,
 } from "recharts";
 import RibbonChart from "./RibbonChart";
+import Tip from "./ChartTip";
 import {
   POP,
   TECH_COLORS,
@@ -37,27 +38,6 @@ function colorFor(dim, key) {
   if (dim === "ship") return SHIP_COLORS[key] || POP.grey;
   if (dim === "inst") return INSTALL_COLORS[key] || POP.grey;
   return TECH_COLORS[key] || POP.grey;
-}
-
-function Tip({ active, payload, label, suffix }) {
-  if (!active || !payload || !payload.length) return null;
-  return (
-    <div className="rounded-lg border border-edge bg-ink/95 px-3 py-2 font-mono text-xs shadow-xl">
-      {label != null && <div className="mb-1 text-muted">{label}</div>}
-      {payload
-        .filter((p) => p.value)
-        .map((p) => (
-          <div key={p.name} className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-sm" style={{ background: p.color || p.fill }} />
-            <span className="text-fg/90">{p.name}</span>
-            <span className="ml-auto tabular-nums text-fg">
-              {p.value}
-              {suffix || ""}
-            </span>
-          </div>
-        ))}
-    </div>
-  );
 }
 
 function Card({ title, action, children, className = "" }) {
@@ -245,20 +225,33 @@ export default function AnalyticsDashboard({
 
   const renderTile = (props) => {
     const { x, y, width, height, name, slug, tech, size } = props;
-    if (width <= 0 || height <= 0) return null;
-    const fill = tech === "Other" ? POP.grey : techColor(tech);
+    // Recharts also calls this for the treemap's root node, which has no name.
+    if (width <= 0 || height <= 0 || name == null) return null;
+    // slug: a maker's page; null = the single-ship catch-all (opens the list of
+    // makers); false = vessels with no maker, which has nowhere to go.
+    const clickable = slug !== false;
+    const fill = tech === "Other" || tech === "None" ? POP.grey : techColor(tech);
     const o = !hl || !TECH_ORDER.includes(hl) ? 1 : tech === hl ? 1 : FADE;
+    // "No maker" is drawn faint (it isn't a company), so its text switches to
+    // the theme's ink to stay readable on the see-through tile.
+    const none = tech === "None";
+    const ink = none ? (theme === "dark" ? "#c9d2e0" : "#10202e") : "#10202e";
     const showLabel = width > 54 && height > 26;
+    // Clip the name to the tile instead of letting it run under the next one.
+    const room = Math.floor((width - 14) / 6.6);
+    const label = name.length > room ? `${name.slice(0, Math.max(1, room - 1))}…` : name;
     return (
-      <g style={{ cursor: "pointer" }} onClick={() => openMaker(slug)}>
-        <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={o}
+      <g style={{ cursor: clickable ? "pointer" : "default" }} onClick={clickable ? () => openMaker(slug) : undefined}>
+        {/* native hover tooltip, so the small unlabelled tiles still say who they are */}
+        <title>{`${name}: ${size} vessel${size === 1 ? "" : "s"}`}</title>
+        <rect x={x} y={y} width={width} height={height} fill={fill} fillOpacity={o * (none ? 0.25 : 1)}
           stroke={theme === "dark" ? "#0a111b" : "#ffffff"} strokeWidth={2} rx={3} />
         {showLabel && (
           <>
-            <text x={x + 8} y={y + 18} fill="#10202e" fillOpacity={o} fontSize={12} fontWeight={500}>
-              {name}
+            <text x={x + 8} y={y + 18} fill={ink} fillOpacity={o} fontSize={12} fontWeight={500}>
+              {label}
             </text>
-            <text x={x + 8} y={y + 33} fill="#10202e" fillOpacity={o * 0.7} fontSize={11}
+            <text x={x + 8} y={y + 33} fill={ink} fillOpacity={o * 0.7} fontSize={11}
               fontFamily="IBM Plex Mono, monospace">
               {size}
             </text>
@@ -342,7 +335,7 @@ export default function AnalyticsDashboard({
         {/* KPIs */}
         <div className={`mb-6 grid gap-3 ${compact ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"}`}>
           <KPI value={KPIS.total} label="vessels" />
-          <KPI value={KPIS.yoy != null ? `+${KPIS.yoy}%` : "—"} label={`yoy ${KPIS.yoyLabel}`} highlight />
+          <KPI value={KPIS.yoy != null ? `${KPIS.yoy > 0 ? "+" : ""}${KPIS.yoy}%` : "—"} label={`yoy ${KPIS.yoyLabel}`} highlight />
           <KPI value={KPIS.devices} label="wind devices" />
           <KPI value={`${KPIS.retrofitPct}%`} label="retrofit" />
           <KPI value={KPIS.oems} label="OEMs" />
@@ -444,7 +437,7 @@ export default function AnalyticsDashboard({
               <BarChart data={TECH_INSTALL} layout="vertical" margin={{ left: 8, right: 8 }}>
                 <CartesianGrid stroke={GRID} horizontal={false} />
                 <XAxis type="number" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} />
-                <YAxis type="category" dataKey="tech" tick={AXIS} tickLine={false} axisLine={false} width={84} />
+                <YAxis type="category" dataKey="tech" tick={AXIS} tickLine={false} axisLine={false} width={118} />
                 <Tooltip content={<Tip />} cursor={{ fill: theme === "dark" ? "#ffffff08" : "#00000008" }} />
                 <Legend iconType="square" wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
                 {INSTALL_ORDER.map((seg, i) => (
@@ -486,7 +479,7 @@ export default function AnalyticsDashboard({
               <BarChart data={market} layout="vertical" margin={{ left: 8, right: 12 }}>
                 <CartesianGrid stroke={GRID} horizontal={false} />
                 <XAxis type="number" tick={AXIS} tickLine={false} axisLine={{ stroke: GRID }} />
-                <YAxis type="category" dataKey="tech" tick={AXIS} tickLine={false} axisLine={false} width={84} />
+                <YAxis type="category" dataKey="tech" tick={AXIS} tickLine={false} axisLine={false} width={118} />
                 <Tooltip content={<Tip suffix={metricSuffix} />} cursor={{ fill: theme === "dark" ? "#ffffff08" : "#00000008" }} />
                 <Bar dataKey="value" radius={[0, 3, 3, 0]} onClick={(d) => toggleHl(d.tech)}>
                   {market.map((d) => (
