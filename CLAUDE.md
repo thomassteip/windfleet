@@ -127,7 +127,7 @@ policy) · MapLibre GL (globe projection) · Recharts · deployed on Vercel.
   `VesselSearch`, `MakerPanel`, `PanelBar` (the shared panel top bar)
 - `components/analytics/` — `AnalyticsDashboard`, `RibbonChart`, `ChartTip`
 - `lib/` — `data.js` (Supabase + fallback), `analytics.js`, `makers.js` (maker websites),
-  `chart.js`, `theme.js`, `wind.js`, `ports.js`
+  `chart.js`, `theme.js`, `wind.js` (+ `windWash.js`, `windParticles.js`), `ports.js`
 
 Navigation (Oct 2026): a fixed rail down the right edge lists the sections (Analytics,
 Makers, and Forecast/Performance greyed out as a deliberate public teaser); on phones it's
@@ -225,10 +225,17 @@ dot. They still count in every total — that's intended, not a bug.
   the camera moves. Particles spawn at random screen pixels, so density is per pixel of
   visible sea and rises as you zoom in (capped by `MAX_LIVE`). Hidden, the layer costs
   nothing: MapLibre doesn't call its `render()`.
+- **The speed wash is a WebGL mesh too** (`lib/windWash.js`), not an image source.
+  The Mercator image it replaced left an empty disc at each pole (Mercator stops at
+  85°) and drew a seam down the mid-Pacific: it was stretched over exactly -180..180
+  although the grids start at -179.75 (GFS) / -177.5 (ERA5), and its two edges were
+  never blended. The mesh starts at the grid's own `lon0`, the texture repeats column
+  0 after the last one, and it runs to ±89.999°. Keep those three things if you touch
+  it, or the seam and the hole come back.
 - **The two wind files store their rows in opposite order**, and it is not cosmetic:
   `wind-avg.json` starts at +90 and steps south (`dlat` negative), `wind.json` starts at
   -90 and steps north (`dlat` positive). Anything that treats row 0 as a fixed hemisphere
-  renders one of them upside down — which is exactly what `buildWindSpeedDataURL()` did
+  renders one of them upside down — which is exactly what the old `buildWindSpeedDataURL()` did
   until Sep 2026, painting the Southern Ocean's winds over the Arctic whenever you picked
   "Live". Derive direction from the sign of `dlat`; never assume. It hid for a while
   because the toggle defaults to "Average", the one that happened to match.
@@ -239,7 +246,7 @@ dot. They still count in every total — that's intended, not a bug.
   reaches 1.91 m/s, because monthly means have already smoothed out the daily variation.
   So `wind-avg.json` carries a separate `speed` array from ERA5's own `si10`
   (`10m_wind_speed`), which averages the HOURLY speeds — `u`/`v` are kept purely for the
-  prevailing direction. `cellSpeed()` in `GlobeView` (the wash) and `makeSampler()` in
+  prevailing direction. `cellSpeed()` in `lib/windWash.js` (the wash) and `makeSampler()` in
   `lib/windParticles.js` (particle speed) read `speed` when a grid has
   it and falls back to `hypot(u, v)` otherwise, which is correct for Live: a single GFS
   instant has no distinction to make. Don't "simplify" that fallback away, and don't drop

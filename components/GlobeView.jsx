@@ -3,8 +3,9 @@
 import { memo, useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { techColor } from "@/lib/theme";
-import { loadWind, speedColor } from "@/lib/wind";
+import { loadWind } from "@/lib/wind";
 import { createWindParticleLayer } from "@/lib/windParticles";
+import { createWindWashLayer } from "@/lib/windWash";
 import { resolvePort } from "@/lib/ports";
 // CARTO basemaps — free, no API key, OpenStreetMap-derived vector tiles.
 // Dark Matter / Positron keep the clean "intel" look and drive the dark/light
@@ -22,79 +23,6 @@ function angularDistDeg(lat1, lng1, lat2, lng2) {
     Math.sin(lat1 * r) * Math.sin(lat2 * r) +
     Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lng2 - lng1) * r);
   return Math.acos(Math.min(1, Math.max(-1, a))) / r;
-}
-
-// How windy a cell is. The ERA5 "Average" grid carries its own `speed` array,
-// because the length of the mean u/v vector is a DIFFERENT, much smaller
-// quantity than the mean wind speed: where direction varies the components
-// cancel, so the mid South Atlantic averages out to 0.22 m/s despite being
-// windy nearly always. Live GFS is a single instant, so there hypot(u,v) is
-// simply the speed. u/v still give the direction in both cases.
-function cellSpeed(grid, idx) {
-  return grid.speed
-    ? grid.speed[idx]
-    : Math.hypot(grid.u[idx], grid.v[idx]);
-}
-
-// Web-Mercator latitude limit + helper (image sources live in mercator space).
-const WIND_MERC = 85.051129;
-const WIND_YMAX = Math.log(Math.tan(Math.PI / 4 + (WIND_MERC * Math.PI) / 360));
-
-// Continuous wind-speed colour field as a Web-Mercator PNG (data URL), land
-// punched out so it only covers water. Smooth via bilinear upscale of the
-// coarse grid; correctly projected so it sits right on the globe.
-function buildWindSpeedDataURL(grid) {
-  if (!grid || typeof document === "undefined") return null;
-  const { nlat, nlon, lat0, lon0, dlat, dlon, u, v } = grid;
-  // 1) coarse equirectangular colour image. Land cells are made transparent
-  //    here (per grid cell — cheap and robust); the later bilinear upscale
-  //    feathers the coastline so the wash stays water-only with a soft edge.
-  const small = document.createElement("canvas");
-  small.width = nlon;
-  small.height = nlat;
-  const sctx = small.getContext("2d");
-  const img = sctx.createImageData(nlon, nlat);
-  // Canvas row 0 has to be the NORTHERNMOST latitude — both the mercator remap
-  // below and the image-source coordinates assume north is at the top. The two
-  // wind sources disagree on row order: ERA5 (wind-avg.json) starts at +90 and
-  // steps south (dlat < 0), GFS (wind.json) starts at -90 and steps north
-  // (dlat > 0). Derive the direction from dlat instead of trusting either
-  // convention, or the whole field renders upside down for one of them.
-  const northFirst = dlat < 0;
-  for (let i = 0; i < nlat; i++) {
-    const row = northFirst ? i : nlat - 1 - i;
-    for (let j = 0; j < nlon; j++) {
-      const spd = cellSpeed(grid, i * nlon + j);
-      const [r, g, b] = speedColor(spd);
-      const p = (row * nlon + j) * 4;
-      img.data[p] = r;
-      img.data[p + 1] = g;
-      img.data[p + 2] = b;
-      img.data[p + 3] = 255; // full globe (land + sea); transparency via layer
-    }
-  }
-  sctx.putImageData(img, 0, 0);
-  // 2) smooth upscale (still equirectangular).
-  const Wb = 1440, Hb = 720;
-  const big = document.createElement("canvas");
-  big.width = Wb;
-  big.height = Hb;
-  const bctx = big.getContext("2d");
-  bctx.imageSmoothingEnabled = true;
-  bctx.drawImage(small, 0, 0, Wb, Hb);
-  // 3) remap rows equirect → mercator.
-  const Wm = 1440, Hm = 1440;
-  const merc = document.createElement("canvas");
-  merc.width = Wm;
-  merc.height = Hm;
-  const mctx = merc.getContext("2d");
-  for (let y = 0; y < Hm; y++) {
-    const ym = WIND_YMAX * (1 - (2 * y) / Hm);
-    const lat = ((2 * Math.atan(Math.exp(ym)) - Math.PI / 2) * 180) / Math.PI;
-    const sv = Math.max(0, Math.min(Hb - 1, ((90 - lat) / 180) * Hb));
-    mctx.drawImage(big, 0, sv, Wb, 1, 0, y, Wm, 1);
-  }
-  return merc.toDataURL("image/png");
 }
 
 // Initial great-circle bearing (degrees, 0 = north) from one point to another.
@@ -201,8 +129,6 @@ function GlobeView({
   const [err, setErr] = useState(null);
   const markersRef = useRef([]);
   const windGridRef = useRef(null);
-  const windSpeedUrlRef = useRef(null);
-  const styleReadyRef = useRef(false); // between style.load and the next setStyle
   const spinRef = useRef({ raf: 0, enabled: true });
   const dashRef = useRef({ timer: 0, i: 0 });
 
@@ -334,22 +260,10 @@ function GlobeView({
   // ── Wind layers: a static speed-colour wash + animated white particles ───
   // Windy's recipe: colour says how strong, motion says which way. The
   // particles carry no colour of their own, so they never fight the wash.
+  // Both are custom WebGL layers that read the current grid on every frame
+  // (lib/windWash.js, lib/windParticles.js), so they can be added as soon as
+  // the style loads, before the grid has even arrived.
   function addWindLayers(map) {
-    if (!windSpeedUrlRef.current) {
-      windSpeedUrlRef.current = buildWindSpeedDataURL(windGridRef.current);
-    }
-    if (!map.getSource("wind-speed-img") && windSpeedUrlRef.current) {
-      map.addSource("wind-speed-img", {
-        type: "image",
-        url: windSpeedUrlRef.current,
-        coordinates: [
-          [-180, WIND_MERC],
-          [180, WIND_MERC],
-          [180, -WIND_MERC],
-          [-180, -WIND_MERC],
-        ],
-      });
-    }
     const firstSymbol = (map.getStyle().layers || []).find(
       (l) => l.type === "symbol"
     );
@@ -367,53 +281,21 @@ function GlobeView({
       );
       map.setLayoutProperty("wind-particles", "visibility", "none");
     }
-    // Speed: a continuous colour field (raster image), kept beneath the
-    // particles (and the labels).
-    if (!map.getLayer("wind-speed") && map.getSource("wind-speed-img")) {
+    // Speed: a smooth colour field wrapped round the whole globe, poles
+    // included, kept beneath the particles (and the labels).
+    if (!map.getLayer("wind-speed")) {
       map.addLayer(
-        {
-          id: "wind-speed",
-          type: "raster",
-          source: "wind-speed-img",
-          layout: { visibility: "none" },
-          paint: { "raster-opacity": 0.4, "raster-fade-duration": 0 },
-        },
+        createWindWashLayer({ id: "wind-speed", getGrid: () => windGridRef.current }),
         "wind-particles"
       );
+      map.setLayoutProperty("wind-speed", "visibility", "none");
     }
-  }
-
-  function updateWindData() {
-    const map = mapRef.current;
-    if (!map) return;
-    windSpeedUrlRef.current = buildWindSpeedDataURL(windGridRef.current);
-    // Ensure the image source/layer exist now that the grid (and URL) are ready.
-    // Not isStyleLoaded(): that stays false while any source is still
-    // fetching, so a grid that arrived just after style.load used to leave
-    // the wash un-added for good. Layers can be added any time after
-    // style.load; if that hasn't happened yet, style.load adds them itself.
-    if (styleReadyRef.current) addWindLayers(map);
-    const f = map.getSource("wind-speed-img");
-    if (f && windSpeedUrlRef.current) {
-      f.updateImage({
-        url: windSpeedUrlRef.current,
-        coordinates: [
-          [-180, WIND_MERC],
-          [180, WIND_MERC],
-          [180, -WIND_MERC],
-          [-180, -WIND_MERC],
-        ],
-      });
-    }
-    updateWindVisibility();
   }
 
   function updateWindVisibility() {
     const map = mapRef.current;
     if (!map) return;
     const vis = showWindRef.current ? "visible" : "none";
-    // Guard each layer: the wind grid loads after the map style, so the
-    // particle layer can exist before the speed layer does.
     for (const id of ["wind-speed", "wind-particles"]) {
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
     }
@@ -529,7 +411,6 @@ function GlobeView({
 
     map.on("style.load", () => {
       try {
-        styleReadyRef.current = true;
         map.setProjection({ type: "globe" });
         shrinkLabels(map);
         addRouteLayers(map);
@@ -604,16 +485,15 @@ function GlobeView({
   }, []);
 
   // Load the wind grid (live GFS or ERA5 average, per windVariant); report
-  // metadata; feed the wind layers. Re-runs whenever the variant toggle
-  // changes, rebuilding the colour wash (the particles pick the new grid up
-  // on their next frame).
+  // metadata. Re-runs whenever the variant toggle changes; both wind layers
+  // pick the new grid up on their next frame.
   useEffect(() => {
     loadWind(windVariant)
       .then((g) => {
         windGridRef.current = g;
         onWindMeta &&
           onWindMeta({ source: g.source, nlat: g.nlat, nlon: g.nlon });
-        updateWindData();
+        if (mapRef.current) mapRef.current.triggerRepaint();
         updateWindVisibility();
       })
       .catch(() => {
@@ -626,7 +506,6 @@ function GlobeView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    styleReadyRef.current = false;
     map.setStyle(STYLE_URL[theme] || STYLE_URL.dark);
     refreshMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
