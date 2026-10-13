@@ -18,6 +18,7 @@ level up, OUTSIDE the repo and untracked**:
 ```
 Wind Assisted Fleet interactive mapping/     <- NOT a git repo
 ├── WindFleet_database.xlsx                  <- SOURCE OF TRUTH for vessel data
+├── backups/                                <- dated copies of the workbook, one per edit
 ├── scripts/
 │   ├── build_snapshot.py                    <- xlsx -> app snapshot
 │   ├── build_supabase_sql.py                <- xlsx -> supabase/init.sql
@@ -26,7 +27,8 @@ Wind Assisted Fleet interactive mapping/     <- NOT a git repo
 ```
 
 So `git status` will never show a database edit. Back the workbook up manually before
-changing it.
+changing it, into `backups/` as `WindFleet_database_backup_<YYYYMMDD>_pre_<what>.xlsx`;
+keep only the live workbook at the top level.
 
 ## Data flow
 
