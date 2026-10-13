@@ -8,6 +8,7 @@ import {
   DEFAULT_COLUMNS,
   FILTER_PARAMS,
   SOURCE_LINE,
+  LICENCE,
   fieldLabel,
   filterVessels,
   isBlank,
@@ -238,7 +239,7 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
   const exportJson = (keys) =>
     download(
       `windfleet-vessels-${stamp}.json`,
-      JSON.stringify({ source: SOURCE_LINE, exported: new Date().toISOString(), count: rows.length, data: toRecords(rows, keys) }, null, 2),
+      JSON.stringify({ source: SOURCE_LINE, licence: `${LICENCE.name} ${LICENCE.url}`, exported: new Date().toISOString(), count: rows.length, data: toRecords(rows, keys) }, null, 2),
       "application/json"
     );
 
@@ -330,6 +331,12 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
               ))}
             </div>
           ))}
+          {(filters.oem || []).map((m) => (
+            <div key={m} className="flex flex-wrap items-center gap-1.5">
+              <span className="w-20 shrink-0 text-[10px] uppercase tracking-widest text-muted">Maker</span>
+              <Chip label={`${m}  ✕`} active onClick={() => toggleFilter("oem", m)} />
+            </div>
+          ))}
           {activeFilters > 0 && (
             <button
               onClick={() => {
@@ -400,7 +407,7 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
                           )}
                           {needsVerify(v) && (
                             <span
-                              title="Some fields on this vessel are unconfirmed (see Notes)"
+                              title="Some fields on this vessel are not yet confirmed"
                               className="rounded border border-edge/70 px-1 font-mono text-[9px] uppercase tracking-wider text-muted"
                             >
                               verify
@@ -429,7 +436,11 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
       </div>
 
       <div className="border-t border-edge/60 px-4 py-2.5 text-[10px] leading-relaxed text-muted/70 sm:px-6">
-        {SOURCE_LINE}. Please cite when reusing. Positions from Open Waters AIS, refreshed daily ("Last seen" is when the ship was heard). Blank means unknown, not zero.{" "}
+        {SOURCE_LINE}. Free to reuse under{" "}
+        <a href={LICENCE.url} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-fg">
+          {LICENCE.name}
+        </a>
+        , with credit to WindFleet. Blank means unknown, not zero.{" "}
         <a
           href="https://www.linkedin.com/in/thomas-steip/"
           target="_blank"

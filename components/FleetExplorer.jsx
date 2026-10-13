@@ -245,11 +245,13 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   }, []);
 
   // Show a panel and put its address in the history, once per change.
+  // `search` (e.g. "?oem=Norsepower") opens the Data panel pre-filtered: it
+  // reads its view from the query string when it mounts.
   const goTo = useCallback(
-    (panel, slug = null) => {
+    (panel, slug = null, search = "") => {
       applyView({ panel, maker: slug });
-      const path = pathForView(panel, slug);
-      if (window.location.pathname !== path) window.history.pushState(null, "", path);
+      const path = pathForView(panel, slug) + search;
+      if (window.location.pathname + window.location.search !== path) window.history.pushState(null, "", path);
     },
     [applyView]
   );
@@ -818,6 +820,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
             wide={isWide}
             onExpand={() => setWide(true)}
             onCollapse={() => setWide(false)}
+            onShowInTable={(name) => goTo("data", null, `?${new URLSearchParams({ oem: name })}`)}
             onShowOnGlobe={(v) => {
               setWide(false);
               if (v) setSelected(v);

@@ -345,7 +345,7 @@ const noFixNote = (maker) =>
   maker.vessels.some((v) => v.lat == null) ? " · ○ = no AIS position, not on the globe" : "";
 
 // Side-panel profile: compact fleet list (first ten, "show all").
-function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
+function MakerProfile({ maker, lastYear, selectedId, onSelectVessel, onShowInTable }) {
   const [showAll, setShowAll] = useState(false);
   const list = showAll ? maker.vessels : maker.vessels.slice(0, LIST_PREVIEW);
 
@@ -391,6 +391,11 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
           </button>
         )}
         <p className="mt-1.5 px-2 text-[10px] text-muted/70">N = newbuild · R = retrofit{noFixNote(maker)}</p>
+        {onShowInTable && (
+          <button onClick={() => onShowInTable(maker.name)} className="mt-2 px-2 text-[11px] text-accent hover:underline">
+            Every field for these ships in the data table →
+          </button>
+        )}
       </section>
 
       <Customers maker={maker} />
@@ -406,22 +411,36 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel }) {
 // Full-width profile: the whole fleet as a table beside the chart and the
 // customer/yard facts. The globe is hidden at this width, so a ship click (or
 // "Show fleet on globe") steps back to the side panel to show it there.
-function MakerProfileWide({ maker, lastYear, onShowOnGlobe }) {
+function MakerProfileWide({ maker, lastYear, onShowOnGlobe, onShowInTable }) {
   const cols = "grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,0.8fr)_4rem_5rem_3rem_minmax(0,1.3fr)]";
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <MakerHeader maker={maker} />
-        <button
-          onClick={() => onShowOnGlobe(null)}
-          className="flex items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-xs text-muted transition hover:border-accent hover:text-fg"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
-          </svg>
-          Show fleet on globe
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {onShowInTable && (
+            <button
+              onClick={() => onShowInTable(maker.name)}
+              className="flex items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-xs text-muted transition hover:border-accent hover:text-fg"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M3 10h18M9 10v10" />
+              </svg>
+              Show in data table
+            </button>
+          )}
+          <button
+            onClick={() => onShowOnGlobe(null)}
+            className="flex items-center gap-2 rounded-lg border border-edge/70 px-3 py-2 text-xs text-muted transition hover:border-accent hover:text-fg"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+            </svg>
+            Show fleet on globe
+          </button>
+        </div>
       </div>
       <MakerStats maker={maker} />
 
@@ -494,6 +513,7 @@ export default function MakerPanel({
   onExpand,
   onCollapse,
   onShowOnGlobe,
+  onShowInTable,
 }) {
   const maker = slug !== "index" ? makers.find((m) => m.slug === slug) : null;
 
@@ -545,7 +565,13 @@ export default function MakerPanel({
           )
         ) : maker ? (
           wide ? (
-            <MakerProfileWide key={maker.slug} maker={maker} lastYear={lastYear} onShowOnGlobe={onShowOnGlobe} />
+            <MakerProfileWide
+              key={maker.slug}
+              maker={maker}
+              lastYear={lastYear}
+              onShowOnGlobe={onShowOnGlobe}
+              onShowInTable={onShowInTable}
+            />
           ) : (
             <MakerProfile
               key={maker.slug}
@@ -553,6 +579,7 @@ export default function MakerPanel({
               lastYear={lastYear}
               selectedId={selectedId}
               onSelectVessel={onSelectVessel}
+              onShowInTable={onShowInTable}
             />
           )
         ) : (
