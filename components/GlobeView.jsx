@@ -4,53 +4,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import maplibregl from "maplibre-gl";
 import { techColor } from "@/lib/theme";
 import { loadWind, speedColor } from "@/lib/wind";
+import { createWindParticleLayer } from "@/lib/windParticles";
 import { resolvePort } from "@/lib/ports";
-import { feature } from "topojson-client";
-import landTopo from "world-atlas/land-110m.json";
-
-// Coarse land outline, used only as a maths mask to keep wind arrows/dots off
-// land (not rendered). 110m is tiny and plenty accurate at ~5° wind spacing.
-const LAND_FC = feature(landTopo, landTopo.objects.land);
-const LAND_POLYS = [];
-{
-  const geoms =
-    LAND_FC.type === "FeatureCollection"
-      ? LAND_FC.features.map((f) => f.geometry)
-      : [LAND_FC.geometry];
-  for (const g of geoms) {
-    if (!g) continue;
-    if (g.type === "MultiPolygon") LAND_POLYS.push(...g.coordinates);
-    else if (g.type === "Polygon") LAND_POLYS.push(g.coordinates);
-  }
-}
-
-function pointInRing(x, y, ring) {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const xi = ring[i][0], yi = ring[i][1];
-    const xj = ring[j][0], yj = ring[j][1];
-    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
-      inside = !inside;
-    }
-  }
-  return inside;
-}
-
-function pointOnLand(lng, lat) {
-  for (const poly of LAND_POLYS) {
-    if (!pointInRing(lng, lat, poly[0])) continue; // outside outer ring
-    let inHole = false;
-    for (let k = 1; k < poly.length; k++) {
-      if (pointInRing(lng, lat, poly[k])) {
-        inHole = true;
-        break;
-      }
-    }
-    if (!inHole) return true;
-  }
-  return false;
-}
-
 // CARTO basemaps — free, no API key, OpenStreetMap-derived vector tiles.
 // Dark Matter / Positron keep the clean "intel" look and drive the dark/light
 // toggle. MapLibre streams these by zoom level, so coastlines stay crisp at any
@@ -60,15 +15,6 @@ const STYLE_URL = {
   light: "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json",
 };
 
-// Wind speed (m/s) → colour ramp, as a MapLibre interpolate expression. Mirrors
-// the STOPS palette in lib/wind.js (calm blue → teal → green → amber → red).
-const SPEED_COLOR = [
-  "interpolate", ["linear"], ["get", "speed"],
-  0, "#15438c", 3, "#2171b5", 6, "#1a9896",
-  9, "#6ebc46", 12, "#f0be37", 15, "#e87828", 20, "#c6282d",
-];
-const ARROW_NEUTRAL = "#eaf2ff";
-
 // Great-circle angular distance (degrees) between two lng/lat points.
 function angularDistDeg(lat1, lng1, lat2, lng2) {
   const r = Math.PI / 180;
@@ -76,34 +22,6 @@ function angularDistDeg(lat1, lng1, lat2, lng2) {
     Math.sin(lat1 * r) * Math.sin(lat2 * r) +
     Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lng2 - lng1) * r);
   return Math.acos(Math.min(1, Math.max(-1, a))) / r;
-}
-
-// A thin stem + open chevron head as an SDF icon (icon-rotate turns it to the
-// wind bearing). Deliberately a hairline shape, distinct from the filled
-// vessel triangles, so it stays subtle and doesn't clutter the map.
-function makeArrowImage() {
-  const s = 48; // higher-res SDF source → stays crisp when scaled up on zoom
-  const c = document.createElement("canvas");
-  c.width = s;
-  c.height = s;
-  const x = c.getContext("2d");
-  x.clearRect(0, 0, s, s);
-  x.strokeStyle = "#ffffff";
-  x.lineWidth = 3;
-  x.lineCap = "round";
-  x.lineJoin = "round";
-  // stem
-  x.beginPath();
-  x.moveTo(24, 40);
-  x.lineTo(24, 11);
-  x.stroke();
-  // open chevron head (points up = north before rotation)
-  x.beginPath();
-  x.moveTo(14, 21);
-  x.lineTo(24, 9);
-  x.lineTo(34, 21);
-  x.stroke();
-  return { width: s, height: s, data: x.getImageData(0, 0, s, s).data };
 }
 
 // How windy a cell is. The ERA5 "Average" grid carries its own `speed` array,
@@ -116,80 +34,6 @@ function cellSpeed(grid, idx) {
   return grid.speed
     ? grid.speed[idx]
     : Math.hypot(grid.u[idx], grid.v[idx]);
-}
-
-// pointOnLand() walks every land ring, and the zoom-adaptive arrow field
-// re-tests the SAME grid cells on every rebuild — so remember each cell's
-// verdict. Lazily filled (-1 = not yet tested) rather than precomputed, so a
-// coarse sample never pays for cells it doesn't visit. Keyed on the grid
-// object, so switching Live/Average drops the stale mask automatically.
-const LAND_MASK_CACHE = new WeakMap();
-function landMaskFor(grid) {
-  let mask = LAND_MASK_CACHE.get(grid);
-  if (!mask) {
-    mask = new Int8Array(grid.nlat * grid.nlon).fill(-1);
-    LAND_MASK_CACHE.set(grid, mask);
-  }
-  return mask;
-}
-
-// Sample the wind grid into ocean-only points. `strideDeg` controls spacing;
-// `withBearing` adds the direction (only the sparse arrow layer needs it). The
-// dense set (every cell) feeds a blurred speed wash; the sparse set feeds the
-// direction arrows.
-function windPoints(grid, strideDeg, withBearing) {
-  if (!grid) return { type: "FeatureCollection", features: [] };
-  const { nlat, nlon, lat0, lon0, dlat, dlon, u, v } = grid;
-  const stepI = Math.max(1, Math.round(strideDeg / Math.abs(dlat)));
-  const land = landMaskFor(grid);
-  const feats = [];
-  for (let i = 0; i < nlat; i += stepI) {
-    const lat = lat0 + dlat * i;
-    if (Math.abs(lat) > 80) continue;
-    // Longitude stride widens toward the poles so arrows stay evenly spaced
-    // in real (great-circle) distance, not in degrees: a degree of longitude
-    // shrinks to ~cos(lat) of its equatorial length as latitude rises, which
-    // is what packed arrows on top of each other near the poles before.
-    const cosLat = Math.cos((lat * Math.PI) / 180);
-    const stepJ = Math.max(1, Math.round(strideDeg / (Math.abs(dlon) * cosLat)));
-    for (let j = 0; j < nlon; j += stepJ) {
-      const idx = i * nlon + j;
-      const uu = u[idx];
-      const vv = v[idx];
-      const spd = cellSpeed(grid, idx);
-      if (spd < 0.5) continue;
-      let lng = lon0 + dlon * j;
-      if (lng > 180) lng -= 360;
-      if (land[idx] === -1) land[idx] = pointOnLand(lng, lat) ? 1 : 0;
-      if (land[idx]) continue; // ocean only
-      const props = { speed: Math.round(spd * 10) / 10 };
-      if (withBearing) {
-        props.bearing = Math.round(
-          ((Math.atan2(uu, vv) * 180) / Math.PI + 360) % 360
-        );
-      }
-      feats.push({
-        type: "Feature",
-        properties: props,
-        geometry: { type: "Point", coordinates: [lng, lat] },
-      });
-    }
-  }
-  return { type: "FeatureCollection", features: feats };
-}
-
-const windArrowsFC = (grid, strideDeg = 4.5) => windPoints(grid, strideDeg, true);
-
-// Arrow spacing tightens as you zoom in, so the field reads as "more detail"
-// rather than the same handful of arrows just growing bigger. Floored at 1.5°
-// (public/wind.json's native grid resolution, see fetch_gfs_wind.py) — spacing
-// arrows closer than the data's real resolution would just repeat the nearest
-// cell's value, which reads as duplicated arrows rather than genuine detail.
-function strideForZoom(zoom) {
-  if (zoom < 2.5) return 4.5; // matches the whole-globe default view exactly
-  if (zoom < 4) return 3;
-  if (zoom < 5.5) return 2;
-  return 1.5;
 }
 
 // Web-Mercator latitude limit + helper (image sources live in mercator space).
@@ -348,8 +192,7 @@ function GlobeView({
   onSelect,
   onHover,
   theme = "dark",
-  showWindColor = false,
-  showWindBarbs = false,
+  showWind = false,
   windVariant = "average",
   onWindMeta,
 }) {
@@ -359,7 +202,7 @@ function GlobeView({
   const markersRef = useRef([]);
   const windGridRef = useRef(null);
   const windSpeedUrlRef = useRef(null);
-  const windStrideRef = useRef(4.5); // current arrow spacing (degrees), zoom-adaptive
+  const styleReadyRef = useRef(false); // between style.load and the next setStyle
   const spinRef = useRef({ raf: 0, enabled: true });
   const dashRef = useRef({ timer: 0, i: 0 });
 
@@ -370,13 +213,13 @@ function GlobeView({
   const onHoverRef = useRef(onHover);
   const pathsRef = useRef(paths);
   const themeRef = useRef(theme);
-  const windFlagsRef = useRef({ showWindColor, showWindBarbs });
+  const showWindRef = useRef(showWind);
   selectedRef.current = selected;
   onSelectRef.current = onSelect;
   onHoverRef.current = onHover;
   pathsRef.current = paths;
   themeRef.current = theme;
-  windFlagsRef.current = { showWindColor, showWindBarbs };
+  showWindRef.current = showWind;
 
   // Shrink the basemap's place/country labels (CARTO ships them fairly large).
   //
@@ -488,16 +331,10 @@ function GlobeView({
     }
   }
 
-  // ── Vector wind layers (arrows for direction, dots for speed) ────────────
-  // Replaces the old equirectangular raster: real geographic points are
-  // occluded by the globe like any GL layer, never cover land as a solid
-  // sheet, and don't distort at the poles.
+  // ── Wind layers: a static speed-colour wash + animated white particles ───
+  // Windy's recipe: colour says how strong, motion says which way. The
+  // particles carry no colour of their own, so they never fight the wash.
   function addWindLayers(map) {
-    if (!map.hasImage("wind-arrow")) {
-      try {
-        map.addImage("wind-arrow", makeArrowImage(), { sdf: true });
-      } catch (_) {}
-    }
     if (!windSpeedUrlRef.current) {
       windSpeedUrlRef.current = buildWindSpeedDataURL(windGridRef.current);
     }
@@ -513,62 +350,35 @@ function GlobeView({
         ],
       });
     }
-    if (!map.getSource("wind-arrows")) {
-      windStrideRef.current = strideForZoom(map.getZoom());
-      map.addSource("wind-arrows", {
-        type: "geojson",
-        data: windArrowsFC(windGridRef.current, windStrideRef.current),
-      });
-    }
     const firstSymbol = (map.getStyle().layers || []).find(
       (l) => l.type === "symbol"
     );
     const before = firstSymbol && firstSymbol.id;
-    // Speed: a continuous, water-masked colour field (raster image), so it
-    // reads as one smooth layer rather than dots.
+    // Particles: a custom WebGL layer (lib/windParticles.js). Only animates
+    // while visible; hidden, MapLibre never calls its render().
+    if (!map.getLayer("wind-particles")) {
+      map.addLayer(
+        createWindParticleLayer({
+          id: "wind-particles",
+          getGrid: () => windGridRef.current,
+          getTheme: () => themeRef.current,
+        }),
+        before
+      );
+      map.setLayoutProperty("wind-particles", "visibility", "none");
+    }
+    // Speed: a continuous colour field (raster image), kept beneath the
+    // particles (and the labels).
     if (!map.getLayer("wind-speed") && map.getSource("wind-speed-img")) {
-      // Keep the wash beneath the arrows (and labels).
-      const speedBefore = map.getLayer("wind-arrows-layer")
-        ? "wind-arrows-layer"
-        : before;
       map.addLayer(
         {
           id: "wind-speed",
           type: "raster",
           source: "wind-speed-img",
           layout: { visibility: "none" },
-          paint: { "raster-opacity": 0.28, "raster-fade-duration": 0 },
+          paint: { "raster-opacity": 0.4, "raster-fade-duration": 0 },
         },
-        speedBefore
-      );
-    }
-    // Direction: sparse, thin chevron arrows.
-    if (!map.getLayer("wind-arrows-layer")) {
-      map.addLayer(
-        {
-          id: "wind-arrows-layer",
-          type: "symbol",
-          source: "wind-arrows",
-          layout: {
-            visibility: "none",
-            "icon-image": "wind-arrow",
-            "icon-rotate": ["get", "bearing"],
-            "icon-rotation-alignment": "map",
-            "icon-allow-overlap": true,
-            "icon-ignore-placement": true,
-            // Grows alongside strideForZoom()'s tightening spacing, so denser
-            // fields also read as "more detail" rather than a wall of icons
-            // the same size as the sparse world view (SDF keeps them crisp).
-            // Kept deliberately small — vessels and routes are the point of
-            // this map, wind is context, not the headline.
-            "icon-size": [
-              "interpolate", ["linear"], ["zoom"],
-              1, 0.16, 2, 0.2, 3.5, 0.28, 5, 0.4, 7, 0.55, 10, 0.7,
-            ],
-          },
-          paint: { "icon-color": ARROW_NEUTRAL, "icon-opacity": 0.7 },
-        },
-        before
+        "wind-particles"
       );
     }
   }
@@ -578,7 +388,11 @@ function GlobeView({
     if (!map) return;
     windSpeedUrlRef.current = buildWindSpeedDataURL(windGridRef.current);
     // Ensure the image source/layer exist now that the grid (and URL) are ready.
-    if (map.isStyleLoaded()) addWindLayers(map);
+    // Not isStyleLoaded(): that stays false while any source is still
+    // fetching, so a grid that arrived just after style.load used to leave
+    // the wash un-added for good. Layers can be added any time after
+    // style.load; if that hasn't happened yet, style.load adds them itself.
+    if (styleReadyRef.current) addWindLayers(map);
     const f = map.getSource("wind-speed-img");
     if (f && windSpeedUrlRef.current) {
       f.updateImage({
@@ -591,59 +405,17 @@ function GlobeView({
         ],
       });
     }
-    const a = map.getSource("wind-arrows");
-    if (a) a.setData(windArrowsFC(windGridRef.current, windStrideRef.current));
     updateWindVisibility();
-  }
-
-  // Re-samples the arrow field at a coarser/finer spacing as the camera zooms,
-  // so arrows stay evenly spaced-looking rather than either a sparse wall of
-  // icons up close or an illegible smear zoomed out.
-  //
-  // Not cheap: a rebuild at the tightest spacing is ~14k points on the live
-  // grid, and it runs on the main thread. So skip it entirely while the arrows
-  // are hidden — both wind toggles start off, which is the path most visitors
-  // take. `windStrideRef` is only advanced when the data is actually rebuilt,
-  // so it keeps describing what's really in the source; switching the arrows
-  // on re-runs this (see the toggle effect) and picks up the current zoom.
-  function updateWindArrowDensity() {
-    const map = mapRef.current;
-    if (!map || !windGridRef.current) return;
-    if (!windFlagsRef.current.showWindBarbs) return;
-    const stride = strideForZoom(map.getZoom());
-    if (stride === windStrideRef.current) return;
-    windStrideRef.current = stride;
-    const a = map.getSource("wind-arrows");
-    if (a) a.setData(windArrowsFC(windGridRef.current, stride));
   }
 
   function updateWindVisibility() {
     const map = mapRef.current;
     if (!map) return;
-    const { showWindColor, showWindBarbs } = windFlagsRef.current;
-    // Guard each layer independently: the wind grid loads after the map style,
-    // so on first paint the arrows layer can exist before the speed layer does
-    // (or vice-versa). Styling a layer that isn't there yet throws a maplibre
-    // error — these layers get styled again once the grid finishes loading.
-    if (map.getLayer("wind-speed")) {
-      map.setLayoutProperty(
-        "wind-speed",
-        "visibility",
-        showWindColor ? "visible" : "none"
-      );
-    }
-    if (map.getLayer("wind-arrows-layer")) {
-      map.setLayoutProperty(
-        "wind-arrows-layer",
-        "visibility",
-        showWindBarbs ? "visible" : "none"
-      );
-      // Tint the arrows by speed when the speed layer is also on, else neutral.
-      map.setPaintProperty(
-        "wind-arrows-layer",
-        "icon-color",
-        showWindColor ? SPEED_COLOR : ARROW_NEUTRAL
-      );
+    const vis = showWindRef.current ? "visible" : "none";
+    // Guard each layer: the wind grid loads after the map style, so the
+    // particle layer can exist before the speed layer does.
+    for (const id of ["wind-speed", "wind-particles"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", vis);
     }
   }
 
@@ -757,6 +529,7 @@ function GlobeView({
 
     map.on("style.load", () => {
       try {
+        styleReadyRef.current = true;
         map.setProjection({ type: "globe" });
         shrinkLabels(map);
         addRouteLayers(map);
@@ -786,9 +559,6 @@ function GlobeView({
 
     // Keep far-side markers hidden as the globe turns.
     map.on("render", updateMarkerOcclusion);
-
-    // Wind arrows re-sample to a tighter/looser grid as the camera zooms.
-    map.on("zoom", updateWindArrowDensity);
 
     // Gentle auto-rotate while idle and nothing is selected.
     const spin = () => {
@@ -834,8 +604,9 @@ function GlobeView({
   }, []);
 
   // Load the wind grid (live GFS or ERA5 average, per windVariant); report
-  // metadata; feed the vector wind layers. Re-runs whenever the variant
-  // toggle changes, rebuilding both the colour wash and the arrow field.
+  // metadata; feed the wind layers. Re-runs whenever the variant toggle
+  // changes, rebuilding the colour wash (the particles pick the new grid up
+  // on their next frame).
   useEffect(() => {
     loadWind(windVariant)
       .then((g) => {
@@ -855,6 +626,7 @@ function GlobeView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
+    styleReadyRef.current = false;
     map.setStyle(STYLE_URL[theme] || STYLE_URL.dark);
     refreshMarkers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -875,13 +647,11 @@ function GlobeView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paths]);
 
-  // Wind toggles → flip layer visibility / colouring, then catch the arrow
-  // field up to the current zoom (density updates are skipped while hidden).
+  // Wind toggle → show/hide the wash and the particles together.
   useEffect(() => {
     updateWindVisibility();
-    updateWindArrowDensity();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showWindColor, showWindBarbs]);
+  }, [showWind]);
 
   // Fly to the selected vessel; stop the spin while focused.
   useEffect(() => {

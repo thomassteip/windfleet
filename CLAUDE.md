@@ -200,8 +200,9 @@ dot. They still count in every total — that's intended, not a bug.
   positions older than 14 days. Routes show only for the hovered/selected ship.
 - The globe's rendered land/coastlines come from the CARTO vector-tile basemaps, not
   from GeoJSON polygons — that's what keeps them crisp at any zoom with no freeze.
-  `world-atlas/land-110m.json` in `GlobeView` is a separate, invisible thing: a coarse
-  land/ocean mask used only to keep wind arrows and the wind-speed wash off land.
+  `world-atlas/land-110m.json` in `lib/windParticles.js` is a separate, invisible thing:
+  a coarse land/ocean mask, rasterised once to 0.25°, used only to keep the wind
+  particles at sea.
 - The Wind layer has two data sources, picked with the Live/Average switch
   (`FleetExplorer`'s `windVariant` state, passed to `GlobeView` and `lib/wind.js`'s
   `loadWind(variant)`): "Live" reads `public/wind.json`, refreshed from NOAA's GFS 10m
@@ -211,8 +212,19 @@ dot. They still count in every total — that's intended, not a bug.
   `scripts/fetch_era5_wind.py` (run by hand, needs a free CDS API key — see the script's
   docstring; it changes rarely enough that it isn't automated). Same JSON schema, both
   files — don't let that fool you into thinking they're kept in sync automatically, they
-  aren't and shouldn't be. Both the direction arrows and the speed wash read whichever
-  file is currently selected.
+  aren't and shouldn't be. Both the particles and the speed wash read whichever file is
+  currently selected.
+- **The wind layer is one toggle** (Oct 2026): a static speed-colour wash plus white
+  animated particles (dark ink in the light theme), Windy-style. The particles are
+  deliberately uncoloured: colour already says how strong, motion says which way, and
+  coloured particles over a coloured wash read as noise. They're a MapLibre custom
+  WebGL layer in `lib/windParticles.js` that projects with MapLibre's own shader
+  prelude, so they stay pinned to the globe while it spins and the far side is clipped.
+  Trails are each particle's last few positions redrawn every frame, not a faded copy
+  of the previous frame: fading a framebuffer would darken the wash and smear whenever
+  the camera moves. Particles spawn at random screen pixels, so density is per pixel of
+  visible sea and rises as you zoom in (capped by `MAX_LIVE`). Hidden, the layer costs
+  nothing: MapLibre doesn't call its `render()`.
 - **The two wind files store their rows in opposite order**, and it is not cosmetic:
   `wind-avg.json` starts at +90 and steps south (`dlat` negative), `wind.json` starts at
   -90 and steps north (`dlat` positive). Anything that treats row 0 as a fixed hemisphere
@@ -227,7 +239,8 @@ dot. They still count in every total — that's intended, not a bug.
   reaches 1.91 m/s, because monthly means have already smoothed out the daily variation.
   So `wind-avg.json` carries a separate `speed` array from ERA5's own `si10`
   (`10m_wind_speed`), which averages the HOURLY speeds — `u`/`v` are kept purely for the
-  prevailing-direction arrows. `cellSpeed()` in `GlobeView` reads `speed` when a grid has
+  prevailing direction. `cellSpeed()` in `GlobeView` (the wash) and `makeSampler()` in
+  `lib/windParticles.js` (particle speed) read `speed` when a grid has
   it and falls back to `hypot(u, v)` otherwise, which is correct for Live: a single GFS
   instant has no distinction to make. Don't "simplify" that fallback away, and don't drop
   `10m_wind_speed` from the CDS request — before this split, the 0.5 m/s arrow cutoff was

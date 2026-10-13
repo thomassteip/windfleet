@@ -204,8 +204,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   // "closed" | "quarter" | "full"
   const [analyticsMode, setAnalyticsMode] = useState(initialPanel === "analytics" ? "quarter" : "closed");
   const [analyticsHl, setAnalyticsHl] = useState(null);
-  const [windColor, setWindColor] = useState(false);
-  const [windBarbs, setWindBarbs] = useState(false);
+  const [windOn, setWindOn] = useState(false);
   const [windVariant, setWindVariant] = useState("average"); // "live" | "average"
   const [windMeta, setWindMeta] = useState(null);
 
@@ -314,8 +313,8 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
 
   const windInfo = windMeta
     ? windVariant === "average"
-      ? `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (2.5°). Colour = mean wind speed (m/s); arrows = prevailing direction.`
-      : `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (1.5°), refreshed twice daily. Colour = wind speed (m/s); arrows = direction.`
+      ? `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (2.5°). Colour = mean wind speed (m/s); particles drift along the prevailing direction.`
+      : `${windMeta.source}. Grid ${windMeta.nlat}×${windMeta.nlon} (1.5°), refreshed twice daily. Colour = wind speed (m/s); particles drift with the wind.`
     : "Loading wind data…";
 
   // Hover handler: store the vessel and the cursor position so the preview
@@ -540,8 +539,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
           onSelect={setSelected}
           onHover={handleHover}
           theme={theme}
-          showWindColor={windColor}
-          showWindBarbs={windBarbs}
+          showWind={windOn}
           windVariant={windVariant}
           onWindMeta={setWindMeta}
         />
@@ -660,16 +658,15 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
             </div>
           </div>
           <WindVariantSwitch value={windVariant} onChange={setWindVariant} />
-          <div className="flex flex-col gap-1.5">
-            <WindToggle label="Wind speed" on={windColor} onClick={() => setWindColor((v) => !v)} />
-            <WindToggle label="Wind direction" on={windBarbs} onClick={() => setWindBarbs((v) => !v)} />
+          <div className="flex flex-col">
+            <WindToggle label="Show wind" on={windOn} onClick={() => setWindOn((v) => !v)} />
           </div>
-          {windColor && (
+          {windOn && (
             <div className="mt-2.5">
               <div className="h-2 w-full rounded-full" style={{ background: WIND_GRADIENT }} />
               <div className="mt-1 flex justify-between font-mono text-[10px] text-muted">
                 <span>0</span>
-                <span>mean m/s</span>
+                <span>{windVariant === "average" ? "mean m/s" : "m/s"}</span>
                 <span>{SPEED_MAX}+</span>
               </div>
             </div>
