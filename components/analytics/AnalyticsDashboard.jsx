@@ -23,7 +23,7 @@ import {
   TECH_ORDER,
   techColor,
 } from "@/lib/theme";
-import { buildAnalytics, FALLBACK_ANALYTICS, INSTALL_ORDER } from "@/lib/analytics";
+import { buildAnalytics, FALLBACK_ANALYTICS, INSTALL_ORDER, NO_CLASS } from "@/lib/analytics";
 import { fetchVessels } from "@/lib/data";
 import { useTheme } from "@/components/ThemeProvider";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -178,6 +178,36 @@ function ShareBars({ rows, hl, onPick, fade }) {
   );
 }
 
+// One ship type split by Vessel Class, in size-ladder order (CLASS_LADDER),
+// not by count. A single series in the type's own colour, so no legend; the
+// numbers sit in text ink beside each bar.
+function ClassBars({ bucket, data }) {
+  if (!data || !data.rows.length) return null;
+  const max = Math.max(...data.rows.map((r) => r.n));
+  return (
+    <div className="mt-4 border-t border-edge/50 pt-4">
+      <h4 className="mb-3 text-[11px] text-muted">
+        <span className="text-fg">{bucket}</span> by class ·{" "}
+        <span className="font-mono tabular-nums">{data.total}</span> vessel{data.total === 1 ? "" : "s"}, small to large
+      </h4>
+      <ul className="max-w-2xl space-y-1.5">
+        {data.rows.map((r) => (
+          <li key={`${r.type}|${r.cls}`} className="flex items-center gap-3" title={`${r.label}: ${r.n}`}>
+            <span className={`w-40 shrink-0 truncate text-[11px] ${r.cls === NO_CLASS ? "italic text-muted/80" : "text-muted"}`}>{r.label}</span>
+            <span className="flex h-3.5 min-w-0 flex-1 items-center">
+              <span
+                className="h-full rounded-r"
+                style={{ width: `${(r.n / max) * 100}%`, minWidth: 3, background: SHIP_COLORS[bucket] || POP.grey }}
+              />
+            </span>
+            <span className="w-6 shrink-0 text-right font-mono text-[11px] tabular-nums text-fg">{r.n}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const KPI = ({ value, label, highlight }) => (
   <div className="rounded-xl border border-edge/50 bg-panel/50 px-4 py-3">
     <div
@@ -240,6 +270,7 @@ export default function AnalyticsDashboard({
   const {
     KPIS,
     CUMULATIVE,
+    CLASSES_BY_SHIP,
     INSTALLS_BY_TECH,
     LAST_YEAR,
     TECH_SHARE,
@@ -376,7 +407,9 @@ export default function AnalyticsDashboard({
           />
           <p className="mt-2 text-[11px] text-muted">
             Cumulative fleet in service; column height is the running total, bands stack in legend order from the bottom. {LAST_YEAR} has a dotted outline — it is year-to-date and will keep growing.
+            {dim === "ship" && !(hl && hlDim === "ship") && " Click a ship type to see its size classes."}
           </p>
+          {dim === "ship" && hl && hlDim === "ship" && <ClassBars bucket={hl} data={CLASSES_BY_SHIP[hl]} />}
         </Card>
 
         {/* Ribbon: annual installs by technology */}

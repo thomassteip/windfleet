@@ -13,7 +13,7 @@ import DataTable from "./data/DataTable";
 import MakerPanel from "./MakerPanel";
 import { useTheme } from "./ThemeProvider";
 import { TECH_ORDER, techColor } from "@/lib/theme";
-import { shipBucket, buildAnalytics, hasMaker, makerSlug } from "@/lib/analytics";
+import { shipBucket, SHIP_TYPES, classOf, sortClasses, passesClassFilter, buildAnalytics, hasMaker, makerSlug } from "@/lib/analytics";
 import { speedColor, SPEED_MAX } from "@/lib/wind";
 import { useIsMobile, useHasHover } from "@/lib/useMediaQuery";
 
@@ -206,6 +206,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   const [filters, setFilters] = useState({
     techs: new Set(),
     types: new Set(),
+    classes: new Set(), // "Type|Class" keys, see classKey in lib/analytics
     installTypes: new Set(),
   });
   const [vessels, setVessels] = useState(FALLBACK_VESSELS);
@@ -328,9 +329,18 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
     () => TECH_ORDER.filter((t) => vessels.some((v) => v.technology === t)),
     [vessels]
   );
-  const TYPES = useMemo(
-    () => [...new Set(vessels.map((v) => v.type).filter(Boolean))].sort(),
-    [vessels]
+  // Types in their fixed order (liquids, dry, wheels, people), any unknown
+  // type after them; each type's classes up its size ladder.
+  const TYPES = useMemo(() => {
+    const present = new Set(vessels.map((v) => v.type).filter(Boolean));
+    return [...SHIP_TYPES.filter((t) => present.has(t)), ...[...present].filter((t) => !SHIP_TYPES.includes(t)).sort()];
+  }, [vessels]);
+  const CLASSES = useMemo(
+    () =>
+      Object.fromEntries(
+        TYPES.map((t) => [t, sortClasses(t, [...new Set(vessels.filter((v) => v.type === t).map(classOf))])])
+      ),
+    [vessels, TYPES]
   );
   const INSTALL_TYPES = useMemo(
     () => [...new Set(vessels.map((v) => v.installType).filter(Boolean))].sort(),
@@ -374,12 +384,13 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   }, [selected, panelOpen]);
 
   const activeFilterCount =
-    filters.techs.size + filters.types.size + filters.installTypes.size;
+    filters.techs.size + filters.types.size + filters.classes.size + filters.installTypes.size;
 
   const filtered = useMemo(() => {
     return vessels.filter((v) => {
       if (filters.techs.size && !filters.techs.has(v.technology)) return false;
       if (filters.types.size && !filters.types.has(v.type)) return false;
+      if (!passesClassFilter(v, filters.classes)) return false;
       if (filters.installTypes.size && !filters.installTypes.has(v.installType))
         return false;
       return true;
@@ -390,7 +401,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
   // globe to just those vessels so the related dots stand out. The highlight
   // arrives as { dim, value }: the value alone is ambiguous, and each dimension
   // matches a different vessel field — ship types go through the SAME bucketing
-  // the charts use, so clicking "Other" or "Ro-Ro / Ropax" works too.
+  // the charts use, so clicking "Other" (Container + untyped) works too.
   // Per-maker profiles, from the same live fleet as everything else.
   const fleetStats = useMemo(() => buildAnalytics(vessels), [vessels]);
 
@@ -444,7 +455,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
         openMaker(hasMaker(v.oem) ? makerSlug(v.oem) : null);
       }
       if (hidden) {
-        setFilters({ techs: new Set(), types: new Set(), installTypes: new Set() });
+        setFilters({ techs: new Set(), types: new Set(), classes: new Set(), installTypes: new Set() });
         setAnalyticsHl(null);
       }
       // A full-width panel hides the globe: step back to the side panel, or
@@ -481,8 +492,19 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
     filtered.forEach((v) => {
       tech[v.technology] = (tech[v.technology] || 0) + 1;
     });
-    return { tech };
-  }, [filtered]);
+    // Type and class counts ignore the type/class filters themselves (else
+    // every unpicked type would read 0) but respect technology and install.
+    const type = {};
+    const cls = {};
+    vessels.forEach((v) => {
+      if (filters.techs.size && !filters.techs.has(v.technology)) return;
+      if (filters.installTypes.size && !filters.installTypes.has(v.installType)) return;
+      type[v.type] = (type[v.type] || 0) + 1;
+      const k = `${v.type}|${classOf(v)}`;
+      cls[k] = (cls[k] || 0) + 1;
+    });
+    return { tech, type, cls };
+  }, [filtered, vessels, filters]);
 
   // Routes are drawn for one vessel at a time, never the whole fleet: a line
   // per ship buried the dots under a tangle, and the longest (least certain)
@@ -658,6 +680,7 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
         <FilterPanel
           techs={TECHS}
           types={TYPES}
+          classes={CLASSES}
           installTypes={INSTALL_TYPES}
           filters={filters}
           setFilters={setFilters}
