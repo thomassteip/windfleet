@@ -70,7 +70,10 @@ column is missing. Adding or reordering a column in the workbook is therefore sa
 was not before Aug 2026, when they indexed by position and a single inserted column
 would have silently shifted every field by one. Keep it that way. A new column needs
 four edits: the workbook, `SHEET_FIELDS`/`FIELDS` in the two build scripts, the `create
-table` block and `COLS` in `build_supabase_sql.py`, and `rowToVessel` in `lib/data.js`.
+table` block and `COLS` in `build_supabase_sql.py`, and `rowToVessel` in `lib/data.js`
+(plus an entry in `lib/fields.js` if it should appear in the Data table and its export).
+`Vessel Class` (Oct 2026) is the latest example: `vessel_class` in Supabase,
+`vesselClass` in the app.
 
 **Deleting a row from the workbook renumbers every vessel after it.** `id` comes from
 row position, so removing one ship shifts all the ids below it up by one — and
@@ -163,6 +166,37 @@ fitted with a wind propulsion device, at any size — 292 dwt sail-cargo through
 rotor/suction/wing/rigid/kite/soft-sail rigs, wind as main or assisting propulsion.
 Excluded: private yachts, sail-training vessels, naval ships, pure R&D demonstrators,
 and anything on order until the system is **physically installed**.
+
+`Vessel Type` has **seven** values (Oct 2026): Tanker, Gas Carrier, Bulk Carrier, General
+Cargo, Container, Ro-Ro, Passenger — what the ship carries, not how it's propelled. The
+old names map as Cement Carrier → Bulk Carrier, Wind Ship and Heavy Lift → General Cargo,
+Ropax and Cruise → Passenger; `normaliseType` in `lib/data.js` applies that map to
+Supabase rows, the snapshot and the Pipeline, so data still in the old names lands in the
+right place. `SHIP_TYPES` in `lib/analytics.js` is the fixed order everywhere. The charts
+use `SHIP_ORDER`/`shipBucket`, the same six types plus "Other": Container (one ship) folds
+into Other on charts only, until there are enough to see; give it a bucket and a validated
+colour (`SHIP_COLORS` in `lib/theme.js`, re-run the dataviz validator) when that changes.
+
+`Vessel Class` = the size or market class within the type (Kamsarmax, MR (MR2), Aframax /
+LR2, VLGC, Ro-Pax ferry…). A **curated** workbook column, not derived in code: dimensions
+can override dwt (Kamsarmax is a 229 m LOA limit, Panamax a 32.31 m beam), and sources
+disagree on band edges, so a person decides. **Leave it blank rather than guess**; the app
+shows a blank as "Class not set", never hides it. The definitions, band edges and sources
+are in `drafts/overnight-20261014/ship_taxonomy_review.md` (section 2). Key edges: bulk by
+dwt (Mini-bulker < 10k, Handysize 10-40k, Handymax 40-50k, Supramax 50-60k, Ultramax
+60-65k, Panamax/Kamsarmax by beam and LOA, Post-Panamax beam > 32.31 m, Capesize 120-185k,
+Newcastlemax ~185-220k, VLOC ≥ 220k); tankers by dwt (Small < 10k, Intermediate 10-25k,
+MR1 25-40k, MR2 40-55k, LR1 55-80k, Aframax/LR2 80-125k, Suezmax 125-200k, VLCC 200-320k);
+gas carriers by cbm (small < 15k, VLGC ≥ 60-70k, LNG classes separate); container by TEU;
+general cargo in WindFleet's own plain dwt bands (`GC < 5k dwt` … `GC ≥ 20k dwt`, cut at
+CII's 20k), labelled as ours; Ro-Ro and Passenger are functional (PCTC, Ro-Ro cargo, Ro-Lo;
+Ro-Pax ferry, Cruise, Expedition cruise) since no public size ladder exists. Classes are
+always listed up the ladder, never A to Z or by count: the order lives in one constant,
+`CLASS_LADDER` in `lib/analytics.js`, matched on the exact workbook strings. A new class
+name needs adding there (unknown names still work, sorted after the ladder). The filter
+panel goes type first, then class within each picked type (`classKey` = "Type|Class",
+because "Panamax" is both a bulker and a tanker class); the dashboard lists a picked
+type's classes (`CLASSES_BY_SHIP` from `buildAnalytics`).
 
 `Installed Year` = the year the system was fitted, not the year the deal was announced.
 `Status` enum is Active / Removed / Decommissioned. Non-Active rows are filtered out
