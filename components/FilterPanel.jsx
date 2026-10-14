@@ -1,13 +1,15 @@
 "use client";
 
 import { TECH_ORDER, techColor } from "@/lib/theme";
+import { classKey, NO_CLASS } from "@/lib/analytics";
 
 
-function Chip({ label, color, active, onClick }) {
+function Chip({ label, color, active, onClick, small = false, muted = false }) {
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition
+      aria-pressed={active}
+      className={`flex items-center gap-2 rounded-full border transition ${small ? "px-2.5 py-1 text-[11px]" : "px-3 py-1.5 text-xs"} ${muted && !active ? "italic" : ""}
         ${
           active
             ? "border-edge bg-edge/60 text-fg"
@@ -20,7 +22,7 @@ function Chip({ label, color, active, onClick }) {
           style={{ background: color, opacity: active ? 1 : 0.4 }}
         />
       )}
-      {label}
+      <span>{label}</span>
     </button>
   );
 }
@@ -28,6 +30,7 @@ function Chip({ label, color, active, onClick }) {
 export default function FilterPanel({
   techs,
   types,
+  classes = {},
   installTypes,
   filters,
   setFilters,
@@ -44,15 +47,32 @@ export default function FilterPanel({
     });
   };
 
+  // Unpicking a type drops its class picks too, so no hidden filter lingers.
+  const toggleType = (t) => {
+    setFilters((f) => {
+      const types = new Set(f.types);
+      const classes = new Set(f.classes);
+      if (types.has(t)) {
+        types.delete(t);
+        for (const k of classes) if (k.startsWith(`${t}|`)) classes.delete(k);
+      } else types.add(t);
+      return { ...f, types, classes };
+    });
+  };
+
   const reset = () =>
     setFilters({
       techs: new Set(),
       types: new Set(),
+      classes: new Set(),
       installTypes: new Set(),
     });
 
   const activeCount =
-    filters.techs.size + filters.types.size + filters.installTypes.size;
+    filters.techs.size + filters.types.size + filters.classes.size + filters.installTypes.size;
+  const fmt = (n) => <span className="font-mono tabular-nums">{n || 0}</span>;
+  // Classes appear under each picked type: type first, then size class.
+  const openTypes = types.filter((t) => filters.types.has(t) && (classes[t] || []).length);
 
   return (
     <div className="scroll-thin pointer-events-auto flex min-h-0 w-full flex-col gap-5 overflow-y-auto rounded-2xl border border-edge/60 bg-panel/80 p-5 backdrop-blur-md md:w-72">
@@ -81,7 +101,7 @@ export default function FilterPanel({
           {TECH_ORDER.filter((t) => techs.includes(t)).map((t) => (
             <Chip
               key={t}
-              label={`${t} (${counts.tech[t] || 0})`}
+              label={<>{t} ({fmt(counts.tech[t])})</>}
               color={techColor(t)}
               active={filters.techs.has(t)}
               onClick={() => toggle("techs", t)}
@@ -95,12 +115,36 @@ export default function FilterPanel({
           {types.map((t) => (
             <Chip
               key={t}
-              label={t}
+              label={<>{t} ({fmt(counts.type?.[t])})</>}
               active={filters.types.has(t)}
-              onClick={() => toggle("types", t)}
+              onClick={() => toggleType(t)}
             />
           ))}
         </div>
+        {openTypes.length === 0 ? (
+          <p className="text-[11px] text-muted/80">Pick a type to filter by size class.</p>
+        ) : (
+          openTypes.map((t) => (
+            <div key={t} className="border-l-2 border-edge/60 pl-3">
+              <h4 className="mb-1.5 text-[11px] text-muted">{t} · class</h4>
+              <div className="flex flex-wrap gap-1.5">
+                {classes[t].map((c) => {
+                  const k = classKey(t, c);
+                  return (
+                    <Chip
+                      key={k}
+                      small
+                      muted={c === NO_CLASS}
+                      label={<>{c} ({fmt(counts.cls?.[k])})</>}
+                      active={filters.classes.has(k)}
+                      onClick={() => toggle("classes", k)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          ))
+        )}
       </Section>
 
       <Section title="Installation">

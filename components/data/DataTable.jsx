@@ -17,6 +17,7 @@ import {
   toRecords,
 } from "@/lib/fields";
 import { TECH_ORDER, techColor } from "@/lib/theme";
+import { SHIP_TYPES, compareClass } from "@/lib/analytics";
 import PanelBar from "@/components/PanelBar";
 
 const FIELD_BY_KEY = Object.fromEntries(FIELDS.map((f) => [f.key, f]));
@@ -76,6 +77,8 @@ function compare(a, b, field, dir) {
   const ab = isBlank(av);
   const bb = isBlank(bv);
   if (ab || bb) return ab === bb ? 0 : ab ? 1 : -1;
+  // Classes sort by type, then up the size ladder (Handysize before VLOC).
+  if (field.key === "vesselClass") return dir === "asc" ? compareClass(a, b) : -compareClass(a, b);
   const n = field.type === "number" || field.type === "year";
   const c = n ? Number(av) - Number(bv) : String(av).localeCompare(String(bv));
   return dir === "asc" ? c : -c;
@@ -197,7 +200,8 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
     const uniq = (key) => [...new Set(vessels.map((v) => v[key]).filter((x) => !isBlank(x)))].sort();
     return {
       technology: TECH_ORDER.filter((t) => vessels.some((v) => v.technology === t)),
-      type: uniq("type"),
+      // The seven types in their fixed order (liquids, dry, wheels, people).
+      type: [...SHIP_TYPES.filter((t) => vessels.some((v) => v.type === t)), ...uniq("type").filter((t) => !SHIP_TYPES.includes(t))],
       installType: uniq("installType"),
     };
   }, [vessels]);

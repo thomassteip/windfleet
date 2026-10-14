@@ -25,6 +25,8 @@ function score(v, q, qn, qDigits) {
     if (imo.startsWith(qDigits) || mmsi.startsWith(qDigits)) return 2;
     if (imo.includes(qDigits) || mmsi.includes(qDigits)) return 4;
   }
+  // Class ("kamsarmax", "vlcc", "pctc") lists that class, after any name hit.
+  if (qn.length >= 3 && v.vesselClass && norm(v.vesselClass).includes(qn)) return 5;
   return null;
 }
 
@@ -172,6 +174,7 @@ export default function VesselSearch({ vessels, onPick, className = "" }) {
                   <span className="block truncate text-xs font-medium text-fg">{v.name}</span>
                   <span className="block truncate text-[11px] text-muted">
                     {v.technology} · {v.type}
+                    {v.vesselClass ? ` · ${v.vesselClass}` : ""}
                   </span>
                 </span>
                 <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-muted">

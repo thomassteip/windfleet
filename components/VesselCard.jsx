@@ -66,6 +66,7 @@ export default function VesselCard({ vessel, onClose, onOpenMaker }) {
           </div>
           <p className="mt-1 text-xs text-muted">
             {vessel.technology} · {vessel.type}
+            {vessel.vesselClass ? ` · ${vessel.vesselClass}` : ""}
           </p>
         </div>
         <button
