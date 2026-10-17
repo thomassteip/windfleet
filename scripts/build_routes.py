@@ -40,7 +40,7 @@ turns the Action red instead of committing a globe with no voyage lines.
 Locally:
     pip install searoute requests
     python3 scripts/build_routes.py      # routes the data/vessels.json snapshot
-    SUPABASE_URL=... SUPABASE_ANON_KEY=... python3 scripts/build_routes.py   # live
+    SUPABASE_URL=... SUPABASE_SERVICE_KEY=... python3 scripts/build_routes.py   # live
 """
 
 import json
@@ -307,17 +307,21 @@ def load_fleet():
     are Supabase's — see the Ilha de Tinhare id-shift note in CLAUDE.md.
     """
     url = os.environ.get("SUPABASE_URL", "").rstrip("/")
-    key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_ANON_KEY")
+    key = os.environ.get("SUPABASE_SERVICE_KEY")
     if not (url and key):
         print("No SUPABASE_URL/key set: routing the data/vessels.json snapshot.")
         return json.load(open(os.path.join(APP, "data", "vessels.json"), encoding="utf8"))
     r = requests.get(
         f"{url}/rest/v1/vessels", timeout=30,
-        headers={"apikey": key, "Authorization": f"Bearer {key}"},
+        # sb_secret_ keys: apikey header only. Legacy JWTs: also as Bearer.
+        headers={"apikey": key, **({} if key.startswith("sb_") else {"Authorization": f"Bearer {key}"})},
         params={"select": "id,name,mmsi,lat,lng,position_updated,destination,"
                           "destination_locode", "order": "id"})
     r.raise_for_status()
     rows = r.json()
+    if not rows:
+        # A key without read access gets an empty list, not an error.
+        sys.exit("ERROR: Supabase returned no vessels (wrong key?)")
     print(f"Routing {len(rows)} vessels from live Supabase.")
     return [{"id": r["id"], "name": r["name"], "mmsi": r["mmsi"],
              "lat": r["lat"], "lng": r["lng"], "positionUpdated": r["position_updated"],

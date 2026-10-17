@@ -33,7 +33,8 @@ keep only the live workbook at the top level.
 ## Data flow
 
 `WindFleet_database.xlsx` (specs, hand-curated) → generated `supabase/init.sql` →
-pasted into the Supabase SQL editor → the app reads Supabase live at runtime.
+pasted into the Supabase SQL editor → the app reads it live at runtime, through its
+own `/api/vessels` route (see "The table is private" below).
 `data/vessels.json` is a bundled snapshot used only for first paint and offline
 fallback. Live AIS position/course/heading/destination/last port are layered on by a
 daily GitHub Action, which also rebuilds `public/routes.json` and commits it. Photos are
@@ -55,7 +56,7 @@ python3 scripts/build_routes.py         # -> public/routes.json (pip install sea
 `init.sql` is a generated artifact — never hand-edit it, regenerate it.
 
 Pasting `init.sql` replaces every row, positions included. `build_supabase_sql.py`
-therefore reads the *current* positions out of Supabase (anon key from `.env.local`)
+therefore reads the *current* positions out of Supabase (service key from `.env.local`)
 and keeps whichever of live / `vessels.json` is newer per vessel. Before Oct 2026 it
 used `vessels.json` alone, and one paste rolled the whole map back to 25 June. If it
 prints `WARNING: falling back…`, don't paste until you've fixed the connection.
@@ -121,8 +122,33 @@ The fix, and the invariant to preserve:
 
 ## Stack
 
-Next.js 14 (App Router, JS not TS) · Tailwind · Supabase (read-only anon key, RLS select
-policy) · MapLibre GL (globe projection) · Recharts · deployed on Vercel.
+Next.js 14 (App Router, JS not TS) · Tailwind · Supabase (private table, read through
+`/api/vessels`) · MapLibre GL (globe projection) · Recharts · deployed on Vercel.
+
+### The table is private (Oct 2026)
+
+`vessels` has row-level security on and **no read policy**, so the anon key reads
+nothing. The browser never talks to Supabase: `fetchVessels()` calls
+`app/api/vessels/route.js`, which reads with `SUPABASE_SERVICE_KEY` and decides what
+leaves the server (Notes stay private; only a `needs_verify` flag goes out). Vercel's
+CDN caches the response for an hour, so Supabase sees ~1 request an hour whatever the
+traffic, and a fresh `init.sql` paste can take up to an hour to show. If the route fails
+the app falls back to the snapshot, as before.
+
+- The service key can **write and delete**. It must never get a `NEXT_PUBLIC_` name
+  (those are copied into every visitor's browser); `next.config.js` fails the build if
+  one does. Use it only in route files, never in `lib/` or `components/`.
+- Use a **secret key** (`sb_secret_…`, Settings → API Keys), not the legacy
+  `service_role` JWT, which Supabase deprecates by end of 2026. Secret keys go on the
+  `apikey` header only (as `Authorization: Bearer` they fail as an invalid JWT); every
+  caller here sends Bearer only for legacy keys, so either kind works. One secret key
+  per place it's used means a leak forces one rotation, not three.
+- It's needed in three places: Vercel's environment variables (Production and
+  Preview), `.env.local` for the local scripts, and GitHub Actions secrets.
+- An unauthorised key gets an **empty list, not an error**, from Supabase. Every script
+  that reads the table treats zero rows as a failure for that reason; keep it so.
+- The snapshot `data/vessels.json` is bundled into the browser JS and still carries
+  Notes, so they aren't fully private until `build_snapshot.py` stops writing them.
 
 `next` is pinned at 14.2.35 deliberately — bump with care.
 
@@ -321,7 +347,7 @@ dot. They still count in every total — that's intended, not a bug.
   That's honest, not a bug. When a fix arrives, every field in it is written, empty
   ones too, so a fresh position is never paired with a stale status or destination.
 - `python3 scripts/refresh_positions.py --dry-run` fetches and prints everything
-  without writing (falls back to the anon key in `.env.local`). Run it first when
+  without writing (falls back to the service key in `.env.local`). Run it first when
   something looks off.
 - AIS has no "last port". It's **detected**: the latest moment in the past 48 h the
   ship sat still within 15 km of a known port. Destination is crew-typed free text,
@@ -336,8 +362,9 @@ dot. They still count in every total — that's intended, not a bug.
   the Tyne, and `lib/ports.js` has a single entry pointing at Australia. `resolvePort()`
   tries the LOCODE first, so filling those columns is what makes voyage lines correct
   rather than usually-correct.
-- `.env.local` holds the Supabase URL + **anon** key (read-only, gitignored). The
-  service key lives only in GitHub Actions secrets. Never commit either.
+- `.env.local` (gitignored) holds the Supabase URL and `SUPABASE_SERVICE_KEY`, for the
+  local scripts. The service key is also in Vercel and GitHub Actions secrets. Never
+  commit it.
 
 ## Open ideas, not yet built
 
@@ -346,10 +373,8 @@ Planned next, in rough order:
 - **`/data` raw table.** Every vessel, every column, sortable, with CSV export. Reads
   the same `fetchVessels()` as everything else — see THE RULE above. Open question:
   gating part of it (full export, or the unpublished columns) behind a sign-in or a
-  request form. Note that "hide it in the UI" hides nothing — the anon key and the RLS
-  select policy hand the whole table to anyone who opens devtools. Real gating means
-  Supabase Auth plus a second RLS policy, or holding the gated columns in a table the
-  anon role can't select at all.
+  request form. Since the table went private (Oct 2026) the `/api/vessels` route is
+  the only way in, so gating means checking a sign-in or API key there.
 - **Literature and results.** A place for published performance and fuel-saving results —
   sea-trial reports, class society studies, OEM claims — linked to the vessels and OEMs
   they measure. Provenance matters more than the number here: whose figure, measured how,

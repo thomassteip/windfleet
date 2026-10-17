@@ -94,11 +94,13 @@ if not DRY_RUN and (not SUPABASE_URL or not SERVICE_KEY):
     sys.exit("ERROR: set SUPABASE_URL and SUPABASE_SERVICE_KEY environment variables.")
 
 REST = f"{SUPABASE_URL}/rest/v1/vessels"
-SB_HEADERS = {
-    "apikey": SERVICE_KEY,
-    "Authorization": f"Bearer {SERVICE_KEY}",
-    "Content-Type": "application/json",
-}
+def supabase_headers(key):
+    # New sb_secret_ keys go on the apikey header only (as a Bearer token they're
+    # rejected as an invalid JWT); legacy service_role JWTs also go as Bearer.
+    return {"apikey": key, **({} if key.startswith("sb_") else {"Authorization": f"Bearer {key}"})}
+
+
+SB_HEADERS = {**supabase_headers(SERVICE_KEY), "Content-Type": "application/json"}
 OW_HEADERS = {"User-Agent": "windfleet-refresh (github.com/thomassteip/windfleet)"}
 if OW_TOKEN:
     OW_HEADERS["Authorization"] = f"Bearer {OW_TOKEN}"
@@ -111,7 +113,8 @@ def iso(dt):
 def get_roster():
     """id, name, imo, mmsi + current position stamp for every vessel."""
     if DRY_RUN and not SERVICE_KEY:
-        # Read-only fallback for local testing: the app's anon key.
+        # Local testing: the service key from .env.local. (The anon key reads
+        # nothing: the table has no public read policy.) Dry runs never write.
         env = {}
         path = os.path.join(portlib.APP, ".env.local")
         for line in open(path):
@@ -119,8 +122,7 @@ def get_roster():
                 k, v = line.split("=", 1)
                 env[k.strip()] = v.strip()
         url = env["NEXT_PUBLIC_SUPABASE_URL"].rstrip("/") + "/rest/v1/vessels"
-        hdr = {"apikey": env["NEXT_PUBLIC_SUPABASE_ANON_KEY"],
-               "Authorization": f"Bearer {env['NEXT_PUBLIC_SUPABASE_ANON_KEY']}"}
+        hdr = supabase_headers(env["SUPABASE_SERVICE_KEY"])
     else:
         url, hdr = REST, SB_HEADERS
     r = requests.get(url, headers=hdr, timeout=30,

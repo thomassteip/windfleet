@@ -9,12 +9,12 @@
  *     node scripts/export_vessels.cjs   # Supabase -> data/vessels.json
  *     python3 scripts/build_routes.py   # -> public/routes.json
  *
- * Reads the NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY from .env.local (read-only).
+ * Reads NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_KEY from .env.local. The
+ * table has no public read policy, so the anon key would read nothing.
  */
 
 const fs = require("fs");
 const path = require("path");
-const { createClient } = require("@supabase/supabase-js");
 
 const APP = path.join(__dirname, "..");
 
@@ -30,9 +30,9 @@ function envVar(name) {
 }
 
 const url = envVar("NEXT_PUBLIC_SUPABASE_URL");
-const key = envVar("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+const key = envVar("SUPABASE_SERVICE_KEY");
 if (!url || !key) {
-  console.error("Missing NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY in .env.local");
+  console.error("Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_KEY in .env.local");
   process.exit(1);
 }
 
@@ -54,10 +54,13 @@ function rowToVessel(r) {
 }
 
 (async () => {
-  const sb = createClient(url, key);
-  const { data, error } = await sb.from("vessels").select("*").order("id");
-  if (error) {
-    console.error("Supabase read failed:", error.message);
+  // sb_secret_ keys: apikey header only. Legacy JWTs: also as Bearer.
+  const headers = { apikey: key, ...(key.startsWith("sb_") ? {} : { Authorization: `Bearer ${key}` }) };
+  const res = await fetch(`${url.replace(/\/$/, "")}/rest/v1/vessels?select=*&order=id`, { headers });
+  const data = res.ok ? await res.json() : null;
+  // A key without read access gets an empty list, not an error.
+  if (!Array.isArray(data) || data.length === 0) {
+    console.error(`Supabase read failed (HTTP ${res.status}, ${data ? data.length : 0} rows). Wrong key?`);
     process.exit(1);
   }
   const vessels = data.map(rowToVessel);
