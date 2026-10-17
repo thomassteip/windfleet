@@ -50,11 +50,10 @@ create table public.vessels (
   updated_at      timestamptz not null default now()
 );
 
+-- Row-level security on, and deliberately NO policy: the anon key (and anyone
+-- holding it) reads nothing. The app reads through its own /api/vessels route
+-- with the service key, which bypasses RLS.
 alter table public.vessels enable row level security;
-
-create policy "Public read access"
-  on public.vessels for select
-  using (true);
 
 insert into public.vessels (id, name, imo, mmsi, flag, type, vessel_class, vessel_subtype, built_year, dwt, gt, loa, beam, technology, oem, oem_country, installed_year, units, system_size, system_size_unit, install_type, build_yard, install_yard, shipowner, operator, status, notes, lat, lng, speed, course, heading, nav_status, destination, destination_locode, last_port, last_port_locode, position_updated, mst_url, vf_url, photo_url, photo_credit) values
   (1, 'Oriental Aquamarine', '9887619', '636022885', 'Liberia', 'Tanker', 'MR (MR2)', 'Chemical/products', 2020, 50000, 29500, 183, 32, 'Wing Sail', 'Hyundai (HD KSOE)', 'South Korea', 2026, 1, 30, 'm', 'Retrofit', NULL, NULL, 'HMM', 'HMM', 'Active', NULL, 37.02577, 126.20189, 6.8, 42, 46, 'Under way using engine', 'Yeosu', 'KRYOS', 'Tauranga', 'NZTRG', '2026-10-17T09:02:27Z', 'https://www.myshiptracking.com/vessels/oriental-aquamarine-mmsi-636022885-imo-9887619', 'https://www.vesselfinder.com/vessels/details/9887619', NULL, NULL),
