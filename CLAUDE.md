@@ -72,8 +72,8 @@ would have silently shifted every field by one. Keep it that way. A new column n
 four edits: the workbook, `SHEET_FIELDS`/`FIELDS` in the two build scripts, the `create
 table` block and `COLS` in `build_supabase_sql.py`, and `rowToVessel` in `lib/data.js`
 (plus an entry in `lib/fields.js` if it should appear in the Data table and its export).
-`Vessel Class` (Oct 2026) is the latest example: `vessel_class` in Supabase,
-`vesselClass` in the app.
+`Vessel Class` and `Vessel Subtype` (Oct 2026) are the latest examples:
+`vessel_class` / `vessel_subtype` in Supabase, `vesselClass` / `vesselSubtype` in the app.
 
 **Deleting a row from the workbook renumbers every vessel after it.** `id` comes from
 row position, so removing one ship shifts all the ids below it up by one — and
@@ -171,8 +171,8 @@ and anything on order until the system is **physically installed**.
 Cargo, Container, Ro-Ro, Passenger — what the ship carries, not how it's propelled. The
 old names map as Cement Carrier → Bulk Carrier, Wind Ship and Heavy Lift → General Cargo,
 Ropax and Cruise → Passenger; `normaliseType` in `lib/data.js` applies that map to
-Supabase rows, the snapshot and the Pipeline, so data still in the old names lands in the
-right place. `SHIP_TYPES` in `lib/analytics.js` is the fixed order everywhere. The charts
+Supabase rows and the snapshot, so data still in the old names (Supabase until the new
+`init.sql` is pasted) lands in the right place. `SHIP_TYPES` in `lib/analytics.js` is the fixed order everywhere. The charts
 use `SHIP_ORDER`/`shipBucket`, the same six types plus "Other": Container (one ship) folds
 into Other on charts only, until there are enough to see; give it a bucket and a validated
 colour (`SHIP_COLORS` in `lib/theme.js`, re-run the dataviz validator) when that changes.
@@ -198,14 +198,31 @@ panel goes type first, then class within each picked type (`classKey` = "Type|Cl
 because "Panamax" is both a bulker and a tanker class); the dashboard lists a picked
 type's classes (`CLASSES_BY_SHIP` from `buildAnalytics`).
 
+`Vessel Subtype` = a third, optional level: what the ship carries within its type.
+Tanker: Crude, Products, Chemical/products, Chemical, Fruit juice; Gas Carrier: LPG,
+Ethylene/LPG, LNG, LCO2; Bulk Carrier: Cement, Ore, Combination; General Cargo:
+Multipurpose, Heavy lift, Sail cargo, Nuclear fuel, Passenger/general cargo; Ro-Ro and
+Passenger have none. About half the fleet has one (58 of 121 rows, Oct 2026). **Leave it
+blank rather than guess.** It shows on the vessel card (its own quieter line), in search
+and as a Data table column; there is no subtype filter or chart, and a blank is simply
+not shown (unlike class, a missing subtype isn't a gap worth flagging).
+
+`Operator` = the charterer where known (owner + charterer is the pair worth showing),
+otherwise the commercial manager.
+
 `Installed Year` = the year the system was fitted, not the year the deal was announced.
+`Installation Type` = **Newbuild** if the system was fitted at build or within about a
+year of delivery, even at a different yard; **Retrofit** only for a ship that had been
+in service longer than that. `System Size` for soft sails is the sail area in m².
 `Status` enum is Active / Removed / Decommissioned. Non-Active rows are filtered out
 everywhere (`isActive` in `lib/data.js`); two rows are Removed as of Oct 2026.
 
 `Build Yard` = who built the hull. `Install Yard` = who physically fitted the wind
-system. For newbuilds these are usually the same yard (the rig goes on during
-construction); for retrofits they diverge, and that gap is the interesting signal —
-Baltic Timber was built at Damen Yichang and fitted at Damen Shiprepair Harlingen.
+system: the yard if known, otherwise the port where it was done. For most newbuilds these
+are the same yard (the rig goes on during construction); for retrofits they usually
+diverge. Where they differ the gap is the interesting signal, and it can happen on a
+newbuild too: Baltic Timber was built at Damen Yichang and fitted at Damen Shiprepair
+Harlingen within a year of delivery, so it counts as a Newbuild (see `Installation Type`).
 Coverage is deliberately partial (10 of 112 as of Aug 2026): **leave a yard blank rather
 than guessing.** Honest gaps beat invented yards.
 
