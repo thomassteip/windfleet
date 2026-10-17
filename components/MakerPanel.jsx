@@ -352,7 +352,7 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel, onShowInTab
       <MakerStats maker={maker} />
 
       <section className="mt-4">
-        <Caption>Fleet · click a ship to find it</Caption>
+        <Caption>Fleet</Caption>
         <ul>
           {list.map((v) => {
             const on = selectedId === v.id;
@@ -390,7 +390,7 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel, onShowInTab
         <p className="mt-1.5 px-2 text-[10px] text-muted/70">N = newbuild · R = retrofit{noFixNote(maker)}</p>
         {onShowInTable && (
           <button onClick={() => onShowInTable(maker.name)} className="mt-2 px-2 text-[11px] text-accent hover:underline">
-            Every field for these ships in the data table →
+            Open in data table
           </button>
         )}
       </section>
@@ -443,7 +443,7 @@ function MakerProfileWide({ maker, lastYear, onShowOnGlobe, onShowInTable }) {
 
       <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <section className="min-w-0">
-          <Caption>Fleet · click a ship to find it on the globe</Caption>
+          <Caption>Fleet</Caption>
           <div className="overflow-x-auto">
             <div className="min-w-[640px]">
               <div className={`grid ${cols} gap-x-3 border-b border-edge/50 px-2 pb-1.5 text-[10px] uppercase tracking-wider text-muted/80`}>

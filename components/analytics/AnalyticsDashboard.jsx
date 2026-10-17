@@ -406,8 +406,7 @@ export default function AnalyticsDashboard({
             ranked={false}
           />
           <p className="mt-2 text-[11px] text-muted">
-            Cumulative fleet in service; column height is the running total, bands stack in legend order from the bottom. {LAST_YEAR} has a dotted outline — it is year-to-date and will keep growing.
-            {dim === "ship" && !(hl && hlDim === "ship") && " Click a ship type to see its size classes."}
+            Running total of vessels in service. {LAST_YEAR} (dotted) is year to date.
           </p>
           {dim === "ship" && hl && hlDim === "ship" && <ClassBars bucket={hl} data={CLASSES_BY_SHIP[hl]} />}
         </Card>
@@ -425,7 +424,7 @@ export default function AnalyticsDashboard({
             partialYear={LAST_YEAR}
           />
           <p className="mt-2 text-[11px] text-muted">
-            Ranked ribbons — column height is the annual install count, bands reorder as technologies rise and fall. {LAST_YEAR} has a dotted outline (year-to-date).
+            Installs per year, ranked by technology. {LAST_YEAR} (dotted) is year to date.
           </p>
         </Card>
 
