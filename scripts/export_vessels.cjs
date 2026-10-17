@@ -45,7 +45,9 @@ function rowToVessel(r) {
     oemCountry: r.oem_country, installedYear: Number(r.installed_year) || null,
     units: r.units, systemSize: r.system_size, systemSizeUnit: r.system_size_unit,
     installType: r.install_type, shipowner: r.shipowner, operator: r.operator,
-    status: r.status, notes: r.notes, lat: r.lat, lng: r.lng, speed: r.speed,
+    status: r.status,
+    // Notes stay private (this file is bundled into the browser): flag only.
+    needsVerify: /VERIFY/.test(r.notes || ""), lat: r.lat, lng: r.lng, speed: r.speed,
     course: r.course, navStatus: r.nav_status, destination: r.destination,
     destinationLocode: r.destination_locode, lastPort: r.last_port,
     lastPortLocode: r.last_port_locode, positionUpdated: r.position_updated,

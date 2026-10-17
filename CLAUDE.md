@@ -147,8 +147,9 @@ the app falls back to the snapshot, as before.
   Preview), `.env.local` for the local scripts, and GitHub Actions secrets.
 - An unauthorised key gets an **empty list, not an error**, from Supabase. Every script
   that reads the table treats zero rows as a failure for that reason; keep it so.
-- The snapshot `data/vessels.json` is bundled into the browser JS and still carries
-  Notes, so they aren't fully private until `build_snapshot.py` stops writing them.
+- Notes never reach the browser. The route and the snapshot `data/vessels.json` (bundled
+  into the browser JS) both carry only a `needsVerify` flag; `build_snapshot.py` and
+  `export_vessels.cjs` write that, not the Notes. Keep it that way in any new builder.
 
 `next` is pinned at 14.2.35 deliberately — bump with care.
 
