@@ -22,7 +22,7 @@ Wind Assisted Fleet interactive mapping/     <- NOT a git repo
 ├── scripts/
 │   ├── build_snapshot.py                    <- xlsx -> app snapshot
 │   ├── build_supabase_sql.py                <- xlsx -> supabase/init.sql
-│   └── fetch_positions.py                   <- AIS scrape
+│   └── build_pipeline.py                    <- Pipeline sheet -> Forecast data
 └── windfleet-app/                           <- git repo root, deploys to Vercel
 ```
 
