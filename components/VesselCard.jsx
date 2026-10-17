@@ -68,6 +68,11 @@ export default function VesselCard({ vessel, onClose, onOpenMaker }) {
             {vessel.technology} · {vessel.type}
             {vessel.vesselClass ? ` · ${vessel.vesselClass}` : ""}
           </p>
+          {/* Subtype on its own quieter line: it's optional, and three
+              segments plus technology overflow the card on one line. */}
+          {vessel.vesselSubtype && (
+            <p className="mt-0.5 text-[11px] text-muted/80">{vessel.vesselSubtype}</p>
+          )}
         </div>
         <button
           onClick={onClose}

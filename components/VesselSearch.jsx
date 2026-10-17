@@ -27,6 +27,8 @@ function score(v, q, qn, qDigits) {
   }
   // Class ("kamsarmax", "vlcc", "pctc") lists that class, after any name hit.
   if (qn.length >= 3 && v.vesselClass && norm(v.vesselClass).includes(qn)) return 5;
+  // Subtype ("lpg", "cement", "heavylift") likewise, after class hits.
+  if (qn.length >= 3 && v.vesselSubtype && norm(v.vesselSubtype).includes(qn)) return 6;
   return null;
 }
 
@@ -175,6 +177,7 @@ export default function VesselSearch({ vessels, onPick, className = "" }) {
                   <span className="block truncate text-[11px] text-muted">
                     {v.technology} · {v.type}
                     {v.vesselClass ? ` · ${v.vesselClass}` : ""}
+                    {v.vesselSubtype ? ` · ${v.vesselSubtype}` : ""}
                   </span>
                 </span>
                 <span className="shrink-0 text-right font-mono text-[10px] tabular-nums text-muted">
