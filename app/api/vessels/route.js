@@ -32,7 +32,13 @@ const headers = serviceKey && {
   ...(serviceKey.startsWith("sb_") ? {} : { Authorization: `Bearer ${serviceKey}` }),
 };
 
-export async function GET() {
+export async function GET(request) {
+  // The CDN caches by full address, so /api/vessels?x=1, ?x=2… would each skip
+  // the cache and cost a Supabase read. The app never adds a query string, so
+  // refuse any request that has one, before touching Supabase.
+  if (new URL(request.url).search) {
+    return NextResponse.json({ error: "No query parameters accepted" }, { status: 400, headers: UNCACHED });
+  }
   if (!url || !serviceKey) {
     return NextResponse.json({ error: "Supabase is not configured" }, { status: 503, headers: UNCACHED });
   }

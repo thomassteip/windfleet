@@ -53,7 +53,7 @@ Deploys to Vercel with zero config: push to a Git repo and import it at vercel.c
 
 ## Data
 
-- **Source of truth:** the `vessels` table in Supabase (`supabase/init.sql` has the schema). The app reads it via `lib/data.js`; on any failure it falls back to the bundled snapshot.
+- **Source of truth:** the `vessels` table in Supabase (its schema is generated into `supabase/init.sql`, which is kept out of the repo). The app reads it via `lib/data.js`; on any failure it falls back to the bundled snapshot.
 - **Snapshot:** `data/vessels.json` — 102 vessels, exported from the WindFleet spreadsheet via `scripts/export_vessels.cjs`.
 - **Positions are indicative.** They're assigned to plausible maritime regions from each vessel's owner/operator and trade pattern — not live AIS. `lib/ports.js` + `lib/locodes.js` resolve named ports to coordinates. Once IMO/MMSI numbers are filled in, real positions can replace these.
 - **Daily refresh:** the GitHub Action `.github/workflows/refresh-positions.yml` runs `scripts/refresh_positions.py` at 05:00 UTC to scrape positions and update Supabase. It needs `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` repo secrets.

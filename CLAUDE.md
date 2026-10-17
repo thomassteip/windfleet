@@ -53,7 +53,9 @@ cd windfleet-app
 python3 scripts/build_routes.py         # -> public/routes.json (pip install searoute)
 ```
 
-`init.sql` is a generated artifact — never hand-edit it, regenerate it.
+`init.sql` is a generated artifact — never hand-edit it, regenerate it. It is
+**gitignored** (Oct 2026): it carries every row's private Notes and the repo is public,
+so committing it would publish them. Older commits still contain it.
 
 Pasting `init.sql` replaces every row, positions included. `build_supabase_sql.py`
 therefore reads the *current* positions out of Supabase (service key from `.env.local`)
