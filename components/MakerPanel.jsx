@@ -294,26 +294,23 @@ function MakerStats({ maker }) {
   );
 }
 
-function Customers({ maker }) {
-  if (!(maker.repeatCustomers.length > 0 || maker.singleCustomers > 0)) return null;
+function Owners({ maker }) {
+  if (!maker.owners.length && !maker.unknownOwners) return null;
   return (
     <section className="mt-5">
-      <Caption>{maker.repeatCustomers.length ? "Repeat customers" : "Customers"}</Caption>
+      <Caption>Owners</Caption>
       <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-        {maker.repeatCustomers.map((c) => (
-          <span key={c.owner} className="rounded-full border border-edge/70 px-2.5 py-0.5 text-fg/90">
-            {c.owner} <span className="font-mono text-muted">×{c.n}</span>
+        {maker.owners.map((o) => (
+          <span key={o.owner} className="rounded-full border border-edge/70 px-2.5 py-0.5 text-fg/90">
+            {o.owner}
+            {o.n > 1 && <span className="font-mono text-muted"> ×{o.n}</span>}
           </span>
         ))}
-        <span className="px-1 text-muted">
-          {[
-            maker.singleCustomers &&
-              `${maker.repeatCustomers.length ? "+ " : ""}${maker.singleCustomers} single-ship owner${maker.singleCustomers === 1 ? "" : "s"}`,
-            maker.unknownCustomers && `${maker.unknownCustomers} unknown`,
-          ]
-            .filter(Boolean)
-            .join(" · ")}
-        </span>
+        {maker.unknownOwners > 0 && (
+          <span className="px-1 text-muted">
+            owner unknown for {maker.unknownOwners} of {maker.count}
+          </span>
+        )}
       </div>
     </section>
   );
@@ -398,7 +395,7 @@ function MakerProfile({ maker, lastYear, selectedId, onSelectVessel, onShowInTab
         )}
       </section>
 
-      <Customers maker={maker} />
+      <Owners maker={maker} />
       <Yards maker={maker} />
 
       <section className="mt-6">
@@ -493,7 +490,7 @@ function MakerProfileWide({ maker, lastYear, onShowOnGlobe, onShowInTable }) {
 
         <div className="min-w-0">
           <Timeline maker={maker} lastYear={lastYear} height={200} />
-          <Customers maker={maker} />
+          <Owners maker={maker} />
           <Yards maker={maker} />
         </div>
       </div>
