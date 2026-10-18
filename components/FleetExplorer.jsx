@@ -658,7 +658,9 @@ export default function FleetExplorer({ initialMaker = null, initialPanel = null
                   : "pointer-events-none translate-y-[115%] opacity-0"
               }`
             : `pointer-events-none absolute bottom-6 left-6 top-24 ${
-                panelOpen ? "opacity-0" : "opacity-100"
+                // invisible, not just transparent: faded out, its cards would
+                // still catch clicks over the vessel card, which moves here
+                panelOpen ? "invisible opacity-0" : "opacity-100"
               }`
         }`}
         aria-hidden={isMobile ? !filtersOpen : panelOpen}
