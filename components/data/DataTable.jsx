@@ -253,7 +253,6 @@ export default function DataTable({ vessels: given, onClose, onSelectVessel }) {
       <div className="border-b border-edge/60 px-4 pb-4 pt-5 sm:px-6">
         <PanelBar onClose={onClose} closeLabel="Close data" />
         <h1 className="font-mono text-2xl font-medium lowercase tracking-tight text-fg">fleet data</h1>
-        <p className="mt-1 text-sm text-muted">Every wind-assisted vessel, every field. Sort, filter, export.</p>
 
         {/* Toolbar */}
         <div className="mt-5 flex flex-wrap items-center gap-2">
