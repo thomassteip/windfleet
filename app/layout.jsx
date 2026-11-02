@@ -3,6 +3,16 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Analytics } from "@vercel/analytics/next";
 
 export const metadata = {
+  metadataBase: new URL("https://www.wind-fleet.app"),
+  openGraph: {
+    type: "website",
+    url: "https://www.wind-fleet.app",
+    siteName: "WindFleet",
+    title: "WindFleet — The Global Wind-Assisted Propulsion Fleet",
+    description:
+      "Interactive map of every commercial vessel with wind-assisted propulsion: rotor, wing, suction sails and kites.",
+  },
+  twitter: { card: "summary_large_image" },
   title: "WindFleet — The Global Wind-Assisted Propulsion Fleet",
   description:
     "An interactive map of every commercial vessel installed with wind-assisted propulsion systems (WAPS): rotor sails, wing sails, suction sails, kites and soft sails.",
